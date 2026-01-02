@@ -1,27 +1,47 @@
-# Repository Guidelines
+# PaperScout Agent Playbook
 
-## Project Structure & Module Organization
-PaperScout is a Go module. CLI entrypoints stay under `cmd/` (currently `cmd/paperscout/`), while all reusable packages live in `internal/` (`internal/arxiv`, `internal/guide`, `internal/notes`, `internal/tui`, etc.). Keep additional integrations in `internal/<domain>/` so they remain importable only inside this repo. Persisted state (e.g., `zettelkasten.json`) is user-provided and should not be committed; sample payloads or screenshots belong in `assets/` if needed. Use `docs/` for design write-ups and `scripts/` for helper binaries or shell utilities.
+## Mission Priorities
+1. Understand the user request and confirm the intended scope before writing code.
+2. Ship minimal, high-quality changes that improve PaperScout without disturbing unrelated files.
+3. Every code or doc change must end with passing tests plus clear reasoning about remaining risks.
+4. Communicate follow-up steps (tests to run, branches to push, etc.) so the next agent has zero guesswork.
 
-## Build, Test, and Development Commands
-- `go mod tidy`: ensure dependencies (Bubble Tea, Lip Gloss, etc.) are synced.  
-- `go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json`: launch the TUI; pass `-no-alt-screen` during development if the alternate screen is inconvenient.  
-- `go build ./cmd/paperscout`: produce a local binary.  
-- `go test ./...`: execute all unit tests for `internal/arxiv`, `internal/notes`, and future packages.
+## Repository Map
+- `cmd/paperscout`: CLI entrypoint; keep user-facing flag logic here.
+- `internal/arxiv`, `internal/guide`, `internal/notes`, `internal/tui`, `internal/llm`: reusable packages. Add new domains under `internal/<domain>` to avoid leaking APIs.
+- `assets/`, `docs/`, `scripts/`: sample payloads, design notes, and helper utilities (create as needed).
+- Ignore user-owned artifacts such as `zettelkasten.json`; never commit them.
 
-## Coding Style & Naming Conventions
-Follow idiomatic Go: run `gofmt`/`goimports` (or rely on your editor) before committing, keep exported identifiers in `PascalCase`, and limit CLI flags to `kebab-case`. Prefer table-driven tests and keep files <300 lines where possible by extracting helpers. When touching the TUI, ensure Bubble Tea updates remain pure (no side effects outside commands) and keep lipgloss styles centralized. Add short comments for non-obvious logic (e.g., heuristics in `internal/arxiv` parsing).
+## Command Reference
+- `go mod tidy` – sync dependencies (Bubble Tea, Lip Gloss, etc.) whenever modules change.
+- `go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json [-no-alt-screen]` – run the TUI locally.
+- `go build ./cmd/paperscout` – compile the CLI for quick smoke testing.
+- `go test ./...` – execute the full unit suite for `internal/*`.
 
-## Testing Guidelines
-Each package under `internal/` should have a corresponding `_test.go` exercising both success and failure paths (e.g., parser errors, note persistence). Use stubbed HTTP clients or fixtures for arXiv interactions so tests pass offline. When bugs are fixed, add a regression test to the affected package. Aim for high coverage on parsing and note-saving code, and run `go test ./...` before opening a PR.
+## Standard Workflow for Any Task
+1. **Plan** – Skim AGENTS.md and repo context, write a short plan when the task is non-trivial.
+2. **Develop** – Work inside the appropriate package; keep Bubble Tea updates pure and isolate side effects in commands.
+3. **Format & Lint** – Run `gofmt`/`goimports` on touched Go files; keep files under ~300 LOC by extracting helpers.
+4. **Test** – Add/maintain `_test.go` coverage for each touched package before running `go test ./...`.
+5. **Review before commit** – Ensure only your edits are staged, summarize risks, and call out any remaining manual steps.
 
-## Commit & Pull Request Guidelines
-Adopt Conventional Commits (`feat:`, `fix:`, `chore:`) with < ~60 character subjects. PR descriptions must include: intent summary, validation steps (build/test commands run locally), linked issues (e.g., `Fixes #42`), and screenshots/logs for UX-visible updates to the TUI. Keep drafts open until lint/tests are green, then request review.
+## Coding Standards
+- Use idiomatic Go naming: exported identifiers in PascalCase; CLI flags in kebab-case.
+- Centralize Lip Gloss styles and Bubble Tea view helpers to avoid redefinition.
+- Add concise comments for heuristics or non-obvious parsing logic (e.g., arXiv ID normalization).
+- Prefer table-driven tests and small helpers to avoid deeply nested conditionals.
 
-## Contribution Workflow Rules
-- Follow the full Conventional Commits spec for every commit message—no exceptions.
-- Multiple agents may be working in parallel, so only commit files you personally touched in your change.
-- Leave other dirty files uncommitted unless the user explicitly states otherwise.
-- Always add tests for the changes you make, and include a short comment in each new test that names the edge case being covered.
-- Prioritize test quality over quantity—add only the scenarios that improve confidence in the change.
-- Create branches using `<author_initials>/<conventional_commit_type>/<three_four_word_desc>` (e.g., `cs/feat/support-pdf-parse`) before opening a PR.
+## Testing Requirements
+- Each code change must include targeted tests covering success and failure paths of the affected module.
+- When stubbing external services (arXiv, LLMs), keep fixtures local so tests pass offline.
+- For every new test, add a short comment stating the precise edge case (e.g., `// ensures blank titles fail validation`).
+- Regression tests are mandatory when fixing bugs; document the bug scenario in the test name.
+- Run `go test ./...` before finishing; note any failures that require elevated permissions or follow-up.
+
+## Branching, Commits, and PRs
+- Create feature branches as `<author_initials>/<conventional_commit_type>/<three_four_word_desc>` (e.g., `cs/feat/support-pdf-parse`).
+- Follow the full Conventional Commits spec for every commit message; keep subjects under ~60 characters.
+- Expect multiple agents working in the same repo; stage/commit only the files you changed in this session and leave pre-existing dirty files alone unless the user explicitly instructs otherwise.
+- Always include the tests you added/updated in the same commit as the implementation; focus on quality, not volume.
+- Commit only when a user request or task is complete (or they explicitly ask for a checkpoint); avoid committing after every small interaction or trivial edit.
+- PR descriptions must cover intent, validation steps (commands run), linked issues, and screenshots/logs for TUI-visible changes.

@@ -1,0 +1,28 @@
+name: Go CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - trunk
+      - develop
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+
+      - name: Verify dependencies
+        run: go mod tidy
+
+      - name: Run unit tests
+        run: go test ./...

@@ -1,0 +1,10 @@
+[
+  {
+    "paperId": "2402.11139",
+    "paperTitle": "LiGNN: Graph Neural Networks at LinkedIn",
+    "title": "Contribution #2",
+    "body": "We present a set of algorithmic improvements to the quality of GNN representation learning including temporal graph architectures with long term losses, effective cold start solutions via graph densification, ID embeddings and multi-hop neighbor sampling.",
+    "kind": "contribution",
+    "createdAt": "2025-12-30T23:41:52.586473-08:00"
+  }
+]

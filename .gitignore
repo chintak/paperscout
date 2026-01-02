@@ -1,2 +1,35 @@
+# Go build cache
 .gocache/
+
+# macOS metadata
 .DS_Store
+
+# Common Go build output directories
+bin/
+build/
+dist/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Object files and archives
+*.a
+*.o
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Coverage and profiling data
+*.cover
+*.cov
+coverage.*
+profile.out
+*.prof
+*.pprof

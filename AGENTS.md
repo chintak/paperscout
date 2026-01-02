@@ -17,3 +17,11 @@ Each package under `internal/` should have a corresponding `_test.go` exercising
 
 ## Commit & Pull Request Guidelines
 Adopt Conventional Commits (`feat:`, `fix:`, `chore:`) with < ~60 character subjects. PR descriptions must include: intent summary, validation steps (build/test commands run locally), linked issues (e.g., `Fixes #42`), and screenshots/logs for UX-visible updates to the TUI. Keep drafts open until lint/tests are green, then request review.
+
+## Contribution Workflow Rules
+- Follow the full Conventional Commits spec for every commit message—no exceptions.
+- Multiple agents may be working in parallel, so only commit files you personally touched in your change.
+- Leave other dirty files uncommitted unless the user explicitly states otherwise.
+- Always add tests for the changes you make, and include a short comment in each new test that names the edge case being covered.
+- Prioritize test quality over quantity—add only the scenarios that improve confidence in the change.
+- Create branches using `<author_initials>/<conventional_commit_type>/<three_four_word_desc>` (e.g., `cs/feat/support-pdf-parse`) before opening a PR.

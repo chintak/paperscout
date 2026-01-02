@@ -3,10 +3,12 @@
 PaperScout runs entirely on beads. Treat `.beads/issues.jsonl` as the canonical queue, and keep every repo change backed by a bead event.
 
 ## Mission Priorities
-1. Start and finish every task inside a bead: load context with `bd show <id> --json`, update status as you progress, and close it only after tests pass.
-2. Ship minimal, high-quality deltas that improve PaperScout without disturbing unrelated files or beads.
-3. Maintain a clean reasoning trail: plans live in bead comments, validation steps live in commit messages, and risks are called out before handoff.
-4. Communicate explicit next steps (remaining beads, follow-up tests, review asks) so another agent can resume instantly.
+1. Track implementation work (anything that touches code or repo artifacts) exclusively through beads: create or locate the right bead, keep its status updated as you work, and close it only after tests pass.
+2. Requests limited to brainstorming, ideation, planning, or trade-off discussions stay outside the bead queue; treat them as conversational context until they produce real work.
+3. When a discussion yields an executable ask, treat it as work: spin up dedicated bead(s), mark blockers/dependencies, add `discovered-from` links if it emerged mid-bead, and only move it forward when it is ready to execute.
+4. Ship minimal, high-quality deltas that improve PaperScout without disturbing unrelated files or beads.
+5. Maintain a clean reasoning trail: plans live in bead comments, validation steps live in commit messages, and risks are called out before handoff.
+6. Communicate explicit next steps (remaining beads, follow-up tests, review asks) so another agent can resume instantly.
 
 ## Repository Map
 - `cmd/paperscout`: CLI entrypoint; user-facing flags stay here.
@@ -23,10 +25,10 @@ PaperScout runs entirely on beads. Treat `.beads/issues.jsonl` as the canonical 
 
 ### Working a Bead
 1. **Claim** – `bd update bd-### --status in_progress --assignee "$(whoami)" --json`
-2. **Plan** – Summarize intent + acceptance criteria in a bead comment; note dependencies using `--deps blocks:bd-###` when needed.
+2. **Plan** – Summarize intent + acceptance criteria via `bd comments add <id> "<note>"`; note dependencies using `--deps blocks:bd-###` when needed.
 3. **Deliver** – Build the change inside the relevant package, referencing bead context in code comments only when necessary.
-4. **Validate** – Run unit tests and record the exact commands plus results as a bead comment.
-5. **Close** – `bd close bd-### --reason "Completed" --json` once code + tests + docs are merged.
+4. **Validate** – Run unit tests and record the exact commands plus results using `bd comments add <id> "<note>"`.
+5. **Close** – `bd close bd-### --reason "<short summary of changes/decisions>" --json` once code + tests + docs are merged. The reason must capture the work performed or rationale applied—never use generic text such as “Completed”.
 
 ### Creating and Linking Beads
 - Use `bd create "Concise title" -t bug|feature|task|epic|chore -p 0-4 --json`.

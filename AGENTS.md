@@ -1,47 +1,87 @@
-# PaperScout Agent Playbook
+# PaperScout Agent Playbook (Beads-Driven)
+
+PaperScout runs entirely on beads. Treat `.beads/issues.jsonl` as the canonical queue, and keep every repo change backed by a bead event.
 
 ## Mission Priorities
-1. Understand the user request and confirm the intended scope before writing code.
-2. Ship minimal, high-quality changes that improve PaperScout without disturbing unrelated files.
-3. Every code or doc change must end with passing tests plus clear reasoning about remaining risks.
-4. Communicate follow-up steps (tests to run, branches to push, etc.) so the next agent has zero guesswork.
+1. Start and finish every task inside a bead: load context with `bd show <id> --json`, update status as you progress, and close it only after tests pass.
+2. Ship minimal, high-quality deltas that improve PaperScout without disturbing unrelated files or beads.
+3. Maintain a clean reasoning trail: plans live in bead comments, validation steps live in commit messages, and risks are called out before handoff.
+4. Communicate explicit next steps (remaining beads, follow-up tests, review asks) so another agent can resume instantly.
 
 ## Repository Map
-- `cmd/paperscout`: CLI entrypoint; keep user-facing flag logic here.
-- `internal/arxiv`, `internal/guide`, `internal/notes`, `internal/tui`, `internal/llm`: reusable packages. Add new domains under `internal/<domain>` to avoid leaking APIs.
-- `assets/`, `docs/`, `scripts/`: sample payloads, design notes, and helper utilities (create as needed).
+- `cmd/paperscout`: CLI entrypoint; user-facing flags stay here.
+- `internal/arxiv`, `internal/guide`, `internal/notes`, `internal/tui`, `internal/llm`: shared packages; add new domains as `internal/<domain>` to avoid leaking APIs.
+- `assets/`, `docs/`, `scripts/`: fixtures, design notes, helper utilities—extend as needed.
 - Ignore user-owned artifacts such as `zettelkasten.json`; never commit them.
 
-## Command Reference
-- `go mod tidy` – sync dependencies (Bubble Tea, Lip Gloss, etc.) whenever modules change.
-- `go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json [-no-alt-screen]` – run the TUI locally.
-- `go build ./cmd/paperscout` – compile the CLI for quick smoke testing.
-- `go test ./...` – execute the full unit suite for `internal/*`.
+## Beads-First Operating System
 
-## Standard Workflow for Any Task
-1. **Plan** – Skim AGENTS.md and repo context, write a short plan when the task is non-trivial.
-2. **Develop** – Work inside the appropriate package; keep Bubble Tea updates pure and isolate side effects in commands.
+### Single Source of Truth
+- Never track work in markdown TODOs or ad-hoc docs. If it matters, create or update a bead.
+- `bd ready --json` lists unblocked beads sorted by priority; always start here before picking a task.
+- Auto-sync keeps `.beads/issues.jsonl` current. Commit it with your code so the queue mirrors the repo state.
+
+### Working a Bead
+1. **Claim** – `bd update bd-### --status in_progress --assignee "$(whoami)" --json`
+2. **Plan** – Summarize intent + acceptance criteria in a bead comment; note dependencies using `--deps blocks:bd-###` when needed.
+3. **Deliver** – Build the change inside the relevant package, referencing bead context in code comments only when necessary.
+4. **Validate** – Run unit tests and record the exact commands plus results as a bead comment.
+5. **Close** – `bd close bd-### --reason "Completed" --json` once code + tests + docs are merged.
+
+### Creating and Linking Beads
+- Use `bd create "Concise title" -t bug|feature|task|epic|chore -p 0-4 --json`.
+- Link discovered work with `--deps discovered-from:bd-parent` and blockers with `--deps blocks:bd-blocker`.
+- Keep bead descriptions action-oriented: context, definition of done, and observable impact.
+
+### Status and Priority Best Practices
+- Status flow: `backlog → ready → in_progress → blocked (optional) → review → done`.
+- Promote beads to `ready` only when scope + acceptance criteria are clear.
+- Priority semantics:
+  - `0` Critical: security/data loss/broken builds.
+  - `1` High: urgent features or major bug fixes.
+  - `2` Medium: default work queue.
+  - `3` Low: polish and optimizations.
+  - `4` Backlog / speculative ideas.
+
+### Observability
+- Use `bd log bd-###` (or `bd history`) to audit changes; keep updates small and descriptive.
+- When pairing work needs asynchronous handoff, drop your latest context in a bead comment plus a `blocked` or `review` status update.
+- Reference bead IDs in commit subjects (`feat: improve parsing (bd-123)`) so git history mirrors the bead ledger.
+
+## Standard Task Loop
+1. **Plan** – Skim this playbook plus the bead you are working on; write a short plan for non-trivial work.
+2. **Develop** – Implement inside the correct package; keep Bubble Tea updates pure and isolate side effects inside commands.
 3. **Format & Lint** – Run `gofmt`/`goimports` on touched Go files; keep files under ~300 LOC by extracting helpers.
-4. **Test** – Add/maintain `_test.go` coverage for each touched package before running `go test ./...`.
-5. **Review before commit** – Ensure only your edits are staged, summarize risks, and call out any remaining manual steps.
+4. **Test** – Maintain `_test.go` coverage for each touched package, then run `go test ./...`.
+5. **Record** – Post test output + remaining risks to the bead, then close or move to `review`.
+
+## Command Reference
+- `go mod tidy` – sync dependencies whenever modules change.
+- `go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json [-no-alt-screen]` – run the TUI locally.
+- `go build ./cmd/paperscout` – compile the CLI for smoke tests.
+- `go test ./...` – execute the full unit suite for `internal/*`.
+- `bd ready --json`, `bd show bd-### --json`, `bd update ...`, `bd close ...` – daily bead hygiene commands.
 
 ## Coding Standards
-- Use idiomatic Go naming: exported identifiers in PascalCase; CLI flags in kebab-case.
-- Centralize Lip Gloss styles and Bubble Tea view helpers to avoid redefinition.
+- Follow idiomatic Go naming: exported identifiers in PascalCase; CLI flags in kebab-case.
+- Centralize Lip Gloss styles and Bubble Tea view helpers to avoid duplication.
 - Add concise comments for heuristics or non-obvious parsing logic (e.g., arXiv ID normalization).
-- Prefer table-driven tests and small helpers to avoid deeply nested conditionals.
+- Favor table-driven tests and small helpers over deeply nested conditionals.
 
 ## Testing Requirements
-- Each code change must include targeted tests covering success and failure paths of the affected module.
-- When stubbing external services (arXiv, LLMs), keep fixtures local so tests pass offline.
-- For every new test, add a short comment stating the precise edge case (e.g., `// ensures blank titles fail validation`).
-- Regression tests are mandatory when fixing bugs; document the bug scenario in the test name.
-- Run `go test ./...` before finishing; note any failures that require elevated permissions or follow-up.
+- Each code change must include targeted tests that cover both success and failure paths.
+- Keep fixtures local so tests pass offline; stub external services (arXiv, LLMs) with deterministic data.
+- Document regressions via test names and short comments (e.g., `// ensures blank titles fail validation`).
+- Run `go test ./...` before finishing and note any failures or flakiness in the bead.
 
 ## Branching, Commits, and PRs
-- Create feature branches as `<author_initials>/<conventional_commit_type>/<three_four_word_desc>` (e.g., `cs/feat/support-pdf-parse`).
-- Follow the full Conventional Commits spec for every commit message; keep subjects under ~60 characters.
-- Expect multiple agents working in the same repo; stage/commit only the files you changed in this session and leave pre-existing dirty files alone unless the user explicitly instructs otherwise.
-- Always include the tests you added/updated in the same commit as the implementation; focus on quality, not volume.
-- Commit only when a user request or task is complete (or they explicitly ask for a checkpoint); avoid committing after every small interaction or trivial edit.
-- PR descriptions must cover intent, validation steps (commands run), linked issues, and screenshots/logs for TUI-visible changes.
+- Create branches as `<author_initials>/<conventional_commit_type>/<three_four_word_desc>` (e.g., `cs/feat/support-pdf-parse`).
+- Write Conventional Commit messages and include the bead ID in the subject when possible.
+- Stage and commit only the files you touched (code + `.beads/issues.jsonl`); leave pre-existing dirty files intact unless instructed.
+- Include new/updated tests in the same commit as the implementation.
+- PR descriptions must link the bead, state validation commands, and attach screenshots/logs for TUI-visible changes.
+
+## Handoff Checklist
+- Bead status reflects reality (`review`, `blocked`, or `done`).
+- `.beads/issues.jsonl` is committed with the code changes.
+- Latest bead comment includes: summary, validation commands, risks, and next steps/tests if outstanding.

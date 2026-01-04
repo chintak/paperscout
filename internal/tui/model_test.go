@@ -213,6 +213,61 @@ func TestBriefSectionStreamRequestsNextDelta(t *testing.T) {
 	close(updates)
 }
 
+func TestPrepareBriefFallbacks(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{
+		ID:               "1234.56789",
+		Title:            "Fixture",
+		Abstract:         "Sentence one. Sentence two. Sentence three?",
+		KeyContributions: []string{"Contribution A", "Contribution B"},
+		Subjects:         []string{"cs.LG", "stat.ML"},
+		Authors:          []string{"Alice", "Bob", "Carol"},
+		PDFURL:           "https://arxiv.org/pdf/1234.56789.pdf",
+	}
+
+	m.prepareBriefFallbacks()
+
+	summary := m.fallbackForSection(llm.BriefSummary)
+	if len(summary) == 0 || !strings.Contains(summary[0], "Sentence one") {
+		t.Fatalf("missing summary fallback, got %#v", summary)
+	}
+
+	technical := m.fallbackForSection(llm.BriefTechnical)
+	if len(technical) == 0 || technical[0] != "Contribution A" {
+		t.Fatalf("missing technical fallback, got %#v", technical)
+	}
+
+	deepDive := m.fallbackForSection(llm.BriefDeepDive)
+	if len(deepDive) == 0 || !strings.Contains(deepDive[0], "Focus areas") {
+		t.Fatalf("missing deep dive fallback, got %#v", deepDive)
+	}
+}
+
+func TestDisplayContentIncludesFallbackWhileLoading(t *testing.T) {
+	m := newTestModel(t)
+	m.config.LLM = fakeLLM{}
+	m.paper = &arxiv.Paper{
+		ID:               "1234.56789",
+		Title:            "Fixture",
+		Abstract:         "Sentence one. Sentence two. Sentence three.",
+		KeyContributions: []string{"Contribution A"},
+		Subjects:         []string{"cs.LG"},
+		Authors:          []string{"Alice", "Bob"},
+	}
+
+	m.prepareBriefFallbacks()
+	m.ensureBriefSections()
+	m.briefSections[llm.BriefSummary] = briefSectionState{Loading: true}
+
+	view := m.buildDisplayContent()
+	if !strings.Contains(view.content, "Provisional summary from the arXiv abstract.") {
+		t.Fatalf("fallback notice missing in view:\n%s", view.content)
+	}
+	if !strings.Contains(view.content, "Sentence one.") {
+		t.Fatalf("summary fallback text missing in view:\n%s", view.content)
+	}
+}
+
 func TestNavigationCheatsheetToggle(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}

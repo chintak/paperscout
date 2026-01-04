@@ -101,25 +101,39 @@ func (m *model) buildDisplayContent() displayView {
 		}
 	}
 
-	renderSection := func(anchor, title string, items []string, state briefSectionState, emptyMsg string) {
+	renderSection := func(kind llm.BriefSectionKind, anchor, title string, items []string, state briefSectionState, emptyMsg string) {
 		if cb.Line() > 0 {
 			cb.WriteRune('\n')
 		}
 		anchors[anchor] = cb.Line()
 		cb.WriteString(sectionHeaderStyle.Render(title))
 		cb.WriteRune('\n')
+		fallback := m.fallbackForSection(kind)
+		renderFallback := func() {
+			if len(fallback) == 0 {
+				return
+			}
+			cb.WriteString(helperStyle.Render(fallbackNotice(kind)))
+			cb.WriteRune('\n')
+			renderBullets(fallback)
+		}
 		switch {
 		case m.config.LLM == nil:
 			cb.WriteString(helperStyle.Render("Connect OpenAI or Ollama (flags or env) to unlock this section."))
 			cb.WriteRune('\n')
+			renderFallback()
 		case state.Loading:
 			cb.WriteString(helperStyle.Render(fmt.Sprintf("%s Generating…", m.spinner.View())))
 			cb.WriteRune('\n')
+			renderFallback()
 		case state.Error != "":
 			cb.WriteString(errorStyle.Render(state.Error))
 			cb.WriteRune('\n')
+			renderFallback()
 		case len(items) > 0:
 			renderBullets(items)
+		case len(fallback) > 0:
+			renderFallback()
 		default:
 			cb.WriteString(helperStyle.Render(emptyMsg))
 			cb.WriteRune('\n')
@@ -127,6 +141,7 @@ func (m *model) buildDisplayContent() displayView {
 	}
 
 	renderSection(
+		llm.BriefSummary,
 		anchorSummary,
 		"Summary Pass",
 		m.brief.Summary,
@@ -134,6 +149,7 @@ func (m *model) buildDisplayContent() displayView {
 		"Press a to build the 3-bullet executive summary.",
 	)
 	renderSection(
+		llm.BriefTechnical,
 		anchorTechnical,
 		"Technical Details",
 		m.brief.Technical,
@@ -141,6 +157,7 @@ func (m *model) buildDisplayContent() displayView {
 		"Press a to populate assumptions, data, models, and evaluation specifics.",
 	)
 	renderSection(
+		llm.BriefDeepDive,
 		anchorDeepDive,
 		"Deep Dive References",
 		m.brief.DeepDive,

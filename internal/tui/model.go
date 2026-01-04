@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -137,6 +139,7 @@ type model struct {
 	sectionAnchors          map[string]int
 	brief                   llm.ReadingBrief
 	briefSections           map[llm.BriefSectionKind]briefSectionState
+	briefFallbacks          map[llm.BriefSectionKind][]string
 	briefContexts           map[llm.BriefSectionKind]string
 	briefChunks             []briefctx.Chunk
 	briefStreamCancels      map[llm.BriefSectionKind]context.CancelFunc
@@ -1120,10 +1123,33 @@ func (m *model) resetBriefState() {
 	for _, kind := range briefSectionKinds {
 		m.briefSections[kind] = briefSectionState{}
 	}
+	m.briefFallbacks = nil
 	m.briefContexts = nil
 	m.briefChunks = nil
 	m.briefStreamCancels = map[llm.BriefSectionKind]context.CancelFunc{}
 	m.briefLoading = false
+}
+
+func (m *model) prepareBriefFallbacks() {
+	if m.paper == nil {
+		m.briefFallbacks = nil
+		return
+	}
+	fallbacks := map[llm.BriefSectionKind][]string{}
+	if summary := fallbackSummaryBullets(m.paper.Abstract); len(summary) > 0 {
+		fallbacks[llm.BriefSummary] = summary
+	}
+	if technical := fallbackTechnicalBullets(m.paper.KeyContributions, m.paper.Abstract); len(technical) > 0 {
+		fallbacks[llm.BriefTechnical] = technical
+	}
+	if deepDive := fallbackDeepDiveBullets(m.paper); len(deepDive) > 0 {
+		fallbacks[llm.BriefDeepDive] = deepDive
+	}
+	if len(fallbacks) == 0 {
+		m.briefFallbacks = nil
+		return
+	}
+	m.briefFallbacks = fallbacks
 }
 
 func (m *model) ensureBriefSections() {
@@ -1229,6 +1255,119 @@ func jobKindForSection(kind llm.BriefSectionKind) jobKind {
 	default:
 		return jobKindBriefSummary
 	}
+}
+
+func (m *model) fallbackForSection(kind llm.BriefSectionKind) []string {
+	if m.briefFallbacks == nil {
+		return nil
+	}
+	return m.briefFallbacks[kind]
+}
+
+func fallbackSummaryBullets(abstract string) []string {
+	sentences := abstractSentences(abstract)
+	var bullets []string
+	for _, sentence := range sentences {
+		text := strings.TrimSpace(sentence)
+		if text == "" {
+			continue
+		}
+		if !strings.HasSuffix(text, ".") && !strings.HasSuffix(text, "!") && !strings.HasSuffix(text, "?") {
+			text += "."
+		}
+		bullets = append(bullets, text)
+		if len(bullets) == 3 {
+			break
+		}
+	}
+	if len(bullets) == 0 && strings.TrimSpace(abstract) != "" {
+		bullets = []string{strings.TrimSpace(abstract)}
+	}
+	return bullets
+}
+
+func fallbackTechnicalBullets(contributions []string, abstract string) []string {
+	var bullets []string
+	for _, entry := range contributions {
+		text := strings.TrimSpace(entry)
+		if text == "" {
+			continue
+		}
+		bullets = append(bullets, text)
+		if len(bullets) == 3 {
+			break
+		}
+	}
+	if len(bullets) == 0 {
+		return fallbackSummaryBullets(abstract)
+	}
+	return bullets
+}
+
+func fallbackDeepDiveBullets(paper *arxiv.Paper) []string {
+	if paper == nil {
+		return nil
+	}
+	var bullets []string
+	if len(paper.Subjects) > 0 {
+		bullets = append(bullets, fmt.Sprintf("Focus areas: %s", strings.Join(paper.Subjects, ", ")))
+	}
+	if len(paper.Authors) > 0 {
+		bullets = append(bullets, fmt.Sprintf("Authors to explore: %s", shortenList(paper.Authors, 4)))
+	}
+	switch {
+	case paper.ID != "":
+		bullets = append(bullets, fmt.Sprintf("arXiv entry: https://arxiv.org/abs/%s", paper.ID))
+	case paper.PDFURL != "":
+		bullets = append(bullets, fmt.Sprintf("Source PDF: %s", paper.PDFURL))
+	}
+	return bullets
+}
+
+func fallbackNotice(kind llm.BriefSectionKind) string {
+	switch kind {
+	case llm.BriefSummary:
+		return "Provisional summary from the arXiv abstract."
+	case llm.BriefTechnical:
+		return "Provisional technical notes derived from key contributions."
+	case llm.BriefDeepDive:
+		return "Provisional metadata references while the PDF brief loads."
+	default:
+		return "Provisional content derived from arXiv metadata."
+	}
+}
+
+func abstractSentences(text string) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	var sentences []string
+	start := 0
+	for idx, r := range text {
+		if r == '.' || r == '!' || r == '?' {
+			end := idx + utf8.RuneLen(r)
+			segment := strings.TrimSpace(text[start:end])
+			if segment != "" {
+				sentences = append(sentences, segment)
+			}
+			start = end
+			for start < len(text) {
+				nextRune, size := utf8.DecodeRuneInString(text[start:])
+				if unicode.IsSpace(nextRune) {
+					start += size
+					continue
+				}
+				break
+			}
+		}
+	}
+	if start < len(text) {
+		if segment := strings.TrimSpace(text[start:]); segment != "" {
+			sentences = append(sentences, segment)
+		}
+	}
+	return sentences
 }
 
 func waitBriefSectionStream(paperID string, kind llm.BriefSectionKind, updates <-chan llm.BriefSectionDelta) tea.Cmd {
@@ -1543,6 +1682,7 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.suggestionLines = map[int]int{}
 	m.sectionAnchors = map[string]int{}
 	m.resetBriefState()
+	m.prepareBriefFallbacks()
 	m.suggestionLoading = false
 	m.qaHistory = nil
 	m.questionLoading = false

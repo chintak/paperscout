@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/muesli/reflow/wordwrap"
+
+	"github.com/csheth/browse/internal/llm"
 )
 
 type pageLayout struct {
@@ -98,7 +100,7 @@ func (m *model) buildDisplayContent() displayView {
 		}
 	}
 
-	renderSection := func(anchor, title string, items []string, loading bool, emptyMsg string) {
+	renderSection := func(anchor, title string, items []string, state briefSectionState, emptyMsg string) {
 		if cb.Line() > 0 {
 			cb.WriteRune('\n')
 		}
@@ -109,8 +111,11 @@ func (m *model) buildDisplayContent() displayView {
 		case m.config.LLM == nil:
 			cb.WriteString(helperStyle.Render("Connect OpenAI or Ollama (flags or env) to unlock this section."))
 			cb.WriteRune('\n')
-		case loading:
+		case state.Loading:
 			cb.WriteString(helperStyle.Render(fmt.Sprintf("%s Generating…", m.spinner.View())))
+			cb.WriteRune('\n')
+		case state.Error != "":
+			cb.WriteString(errorStyle.Render(state.Error))
 			cb.WriteRune('\n')
 		case len(items) > 0:
 			renderBullets(items)
@@ -124,21 +129,21 @@ func (m *model) buildDisplayContent() displayView {
 		anchorSummary,
 		"Summary Pass",
 		m.brief.Summary,
-		m.briefLoading,
+		m.sectionState(llm.BriefSummary),
 		"Press a to build the 3-bullet executive summary.",
 	)
 	renderSection(
 		anchorTechnical,
 		"Technical Details",
 		m.brief.Technical,
-		m.briefLoading,
+		m.sectionState(llm.BriefTechnical),
 		"Press a to populate assumptions, data, models, and evaluation specifics.",
 	)
 	renderSection(
 		anchorDeepDive,
 		"Deep Dive References",
 		m.brief.DeepDive,
-		m.briefLoading,
+		m.sectionState(llm.BriefDeepDive),
 		"Press a to surface influential citations for further study.",
 	)
 

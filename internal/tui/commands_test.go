@@ -20,6 +20,9 @@ func (fakeLLM) SuggestNotes(ctx context.Context, title, abstract string, contrib
 func (fakeLLM) ReadingBrief(ctx context.Context, title, content string) (llm.ReadingBrief, error) {
 	return llm.ReadingBrief{}, nil
 }
+func (fakeLLM) BriefSection(ctx context.Context, kind llm.BriefSectionKind, title, content string) ([]string, error) {
+	return nil, nil
+}
 func (fakeLLM) Name() string { return "fake" }
 
 func newTestModel(t *testing.T) *model {

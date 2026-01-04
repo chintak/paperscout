@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -129,22 +130,51 @@ func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	}
 }
 
-func TestBriefResultUpdatesState(t *testing.T) {
+func TestBriefSectionResultUpdatesState(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
-	brief := llm.ReadingBrief{
-		Summary:   []string{"Bullet"},
-		Technical: []string{"Detail"},
-		DeepDive:  []string{"Link"},
-	}
 
-	if cmd := m.handleBriefResult(briefResultMsg{paperID: "1234.56789", brief: brief}); cmd != nil {
+	msg := briefSectionMsg{
+		paperID: "1234.56789",
+		kind:    llm.BriefSummary,
+		bullets: []string{"Bullet"},
+	}
+	if cmd := m.handleBriefSectionResult(msg); cmd != nil {
 		t.Fatalf("brief handler should not return a command, got %v", cmd)
 	}
 	if len(m.brief.Summary) != 1 || m.brief.Summary[0] != "Bullet" {
-		t.Fatalf("brief not stored: %#v", m.brief)
+		t.Fatalf("summary not stored: %#v", m.brief.Summary)
+	}
+	state := m.sectionState(llm.BriefSummary)
+	if state.Loading {
+		t.Fatal("section should not be marked loading after result")
+	}
+	if !state.Completed {
+		t.Fatal("section should be marked completed after success")
+	}
+}
+
+func TestBriefSectionResultSetsError(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
+	m.markBriefSectionRunning(llm.BriefTechnical)
+
+	msg := briefSectionMsg{
+		paperID: "1234.56789",
+		kind:    llm.BriefTechnical,
+		err:     errors.New("timeout"),
+	}
+	if cmd := m.handleBriefSectionResult(msg); cmd != nil {
+		t.Fatalf("brief handler should not return a command, got %v", cmd)
+	}
+	state := m.sectionState(llm.BriefTechnical)
+	if state.Error == "" {
+		t.Fatal("expected section error to be recorded")
+	}
+	if m.errorMessage == "" {
+		t.Fatal("expected model to surface error message")
 	}
 	if m.briefLoading {
-		t.Fatal("brief loading flag should be cleared after result")
+		t.Fatal("error should clear loading flag")
 	}
 }

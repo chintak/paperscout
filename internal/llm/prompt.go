@@ -172,6 +172,87 @@ func parseReadingBrief(raw string) (ReadingBrief, error) {
 	return ReadingBrief{}, fmt.Errorf("unable to parse brief payload")
 }
 
+func buildBriefSectionPrompt(kind BriefSectionKind, title, context string) string {
+	if title == "" {
+		title = "the paper"
+	}
+	var directives string
+	switch kind {
+	case BriefSummary:
+		directives = "Return exactly 3 bullets focused on (1) problem domain + strongest prior, (2) proposed approach + key contributions, (3) evaluation metrics + quantitative gains. Keep each bullet <=24 words."
+	case BriefTechnical:
+		directives = "Return 3-5 bullets covering assumptions, datasets, model architecture, and evaluation/reproducibility details. Highlight crucial metrics or component names using **bold** markdown."
+	case BriefDeepDive:
+		directives = "Return exactly 3 influential cited or related works to study next. Each bullet names the work and states the insight or why it matters."
+	default:
+		directives = "Return 3 concise bullets summarizing the paper."
+	}
+	return fmt.Sprintf(`You are guiding a researcher through S. Keshav's three-pass reading method.
+Write the %s section by following these constraints:
+%s
+Return ONLY a JSON array of strings such as ["bullet","bullet"].
+
+Paper title: %s
+
+Context:
+%s`, sectionLabel(kind), directives, title, context)
+}
+
+func sectionLabel(kind BriefSectionKind) string {
+	switch kind {
+	case BriefSummary:
+		return "summary"
+	case BriefTechnical:
+		return "technical"
+	case BriefDeepDive:
+		return "deep-dive"
+	default:
+		return "summary"
+	}
+}
+
+func clipBriefSectionContext(kind BriefSectionKind, text string) string {
+	return clipText(text, BriefSectionLimit(kind))
+}
+
+func parseBriefSection(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("empty brief section response")
+	}
+	candidates := []string{raw}
+	if start := strings.Index(raw, "["); start >= 0 {
+		if end := strings.LastIndex(raw, "]"); end > start {
+			candidates = append(candidates, raw[start:end+1])
+		}
+	}
+	for _, candidate := range candidates {
+		var arr []string
+		if err := json.Unmarshal([]byte(candidate), &arr); err == nil {
+			clean := sanitizeBullets(arr)
+			if len(clean) > 0 {
+				return clean, nil
+			}
+			continue
+		}
+		var wrapper struct {
+			Items []string `json:"items"`
+			Data  []string `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(candidate), &wrapper); err == nil {
+			values := wrapper.Items
+			if len(values) == 0 {
+				values = wrapper.Data
+			}
+			values = sanitizeBullets(values)
+			if len(values) > 0 {
+				return values, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("unable to parse brief section payload")
+}
+
 func sanitizeBullets(items []string) []string {
 	var cleaned []string
 	for _, item := range items {

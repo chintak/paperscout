@@ -165,3 +165,35 @@ func TestOllamaClientReadingBrief(t *testing.T) {
 		t.Fatalf("unexpected summary: %#v", brief.Summary)
 	}
 }
+
+func TestOllamaClientBriefSection(t *testing.T) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var payload struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if !strings.Contains(payload.Prompt, "Write the summary section") {
+			t.Fatalf("prompt missing section directive: %s", payload.Prompt)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":"[\"bullet\"]","done":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := &ollamaClient{
+		host:   "http://example.com",
+		model:  "ministral-3:latest",
+		client: &http.Client{Transport: rt},
+	}
+	items, err := client.BriefSection(context.Background(), BriefSummary, "Cool Paper", "content")
+	if err != nil {
+		t.Fatalf("brief section failed: %v", err)
+	}
+	if len(items) != 1 || items[0] != "bullet" {
+		t.Fatalf("unexpected items: %#v", items)
+	}
+}

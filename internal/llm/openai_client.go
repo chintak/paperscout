@@ -68,6 +68,19 @@ func (c *openAIClient) ReadingBrief(ctx context.Context, title, content string) 
 	return parseReadingBrief(raw)
 }
 
+func (c *openAIClient) BriefSection(ctx context.Context, kind BriefSectionKind, title, content string) ([]string, error) {
+	context := clipBriefSectionContext(kind, content)
+	if context == "" {
+		return nil, fmt.Errorf("paper text empty; cannot build %s section", kind)
+	}
+	prompt := buildBriefSectionPrompt(kind, title, context)
+	raw, err := c.chat(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return parseBriefSection(raw)
+}
+
 func (c *openAIClient) chat(ctx context.Context, prompt string) (string, error) {
 	payload := map[string]any{
 		"model": c.model,

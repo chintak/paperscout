@@ -6,7 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time"
+	"time
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -81,6 +81,7 @@ func New(config Config) tea.Model {
 	}
 
 	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+	m.resetBriefState()
 	return m
 }
 
@@ -116,6 +117,7 @@ type model struct {
 	helpVisible             bool
 	sectionAnchors          map[string]int
 	brief                   llm.ReadingBrief
+	briefSections           map[llm.BriefSectionKind]briefSectionState
 	briefLoading            bool
 	suggestionLoading       bool
 	qaHistory               []qaExchange
@@ -147,9 +149,10 @@ type saveResultMsg struct {
 	err   error
 }
 
-type briefResultMsg struct {
+type briefSectionMsg struct {
 	paperID string
-	brief   llm.ReadingBrief
+	kind    llm.BriefSectionKind
+	bullets []string
 	err     error
 }
 
@@ -181,6 +184,12 @@ type transcriptEntry struct {
 	Timestamp time.Time
 }
 
+type briefSectionState struct {
+	Loading   bool
+	Completed bool
+	Error     string
+}
+
 const (
 	actionSummarize   actionID = "summarize"
 	actionAskQuestion actionID = "ask_question"
@@ -199,6 +208,12 @@ var paletteCommands = []uiCommand{
 	{id: actionSaveNotes, title: "Save manual notes", description: "Persist any manual notes you drafted this session", shortcut: "s"},
 	{id: actionToggleHelp, title: "Toggle help overlay", description: "Show or hide the command cheatsheet", shortcut: "?"},
 	{id: actionLoadNew, title: "Load another paper", description: "Return to the URL prompt", shortcut: "r"},
+}
+
+var briefSectionKinds = []llm.BriefSectionKind{
+	llm.BriefSummary,
+	llm.BriefTechnical,
+	llm.BriefDeepDive,
 }
 
 func (m *model) Init() tea.Cmd {
@@ -277,8 +292,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handlePaperResult(msg)
 	case saveResultMsg:
 		return m, m.handleSaveResult(msg)
-	case briefResultMsg:
-		return m, m.handleBriefResult(msg)
+	case briefSectionMsg:
+		return m, m.handleBriefSectionResult(msg)
 	case questionResultMsg:
 		return m, m.handleQuestionResult(msg)
 	case suggestionResultMsg:
@@ -1062,6 +1077,133 @@ func (m *model) advanceSearch(delta int) {
 	m.refreshViewportIfDirty()
 }
 
+func (m *model) resetBriefState() {
+	m.brief = llm.ReadingBrief{}
+	m.briefSections = map[llm.BriefSectionKind]briefSectionState{}
+	for _, kind := range briefSectionKinds {
+		m.briefSections[kind] = briefSectionState{}
+	}
+	m.briefLoading = false
+}
+
+func (m *model) ensureBriefSections() {
+	if m.briefSections == nil {
+		m.briefSections = map[llm.BriefSectionKind]briefSectionState{}
+	}
+	for _, kind := range briefSectionKinds {
+		if _, ok := m.briefSections[kind]; !ok {
+			m.briefSections[kind] = briefSectionState{}
+		}
+	}
+}
+
+func (m *model) markBriefSectionRunning(kind llm.BriefSectionKind) {
+	m.ensureBriefSections()
+	state := m.briefSections[kind]
+	state.Loading = true
+	state.Error = ""
+	m.briefSections[kind] = state
+	m.briefLoading = true
+}
+
+func (m *model) markBriefSectionResult(kind llm.BriefSectionKind, err error) briefSectionState {
+	m.ensureBriefSections()
+	state := m.briefSections[kind]
+	state.Loading = false
+	if err != nil {
+		state.Error = err.Error()
+		state.Completed = false
+	} else {
+		state.Error = ""
+		state.Completed = true
+	}
+	m.briefSections[kind] = state
+	m.briefLoading = m.anyBriefSectionLoading()
+	return state
+}
+
+func (m *model) anyBriefSectionLoading() bool {
+	if m.briefSections == nil {
+		return false
+	}
+	for _, state := range m.briefSections {
+		if state.Loading {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *model) sectionState(kind llm.BriefSectionKind) briefSectionState {
+	if m.briefSections == nil {
+		return briefSectionState{}
+	}
+	return m.briefSections[kind]
+}
+
+func (m *model) updateBriefContent(kind llm.BriefSectionKind, bullets []string) {
+	switch kind {
+	case llm.BriefSummary:
+		m.brief.Summary = bullets
+	case llm.BriefTechnical:
+		m.brief.Technical = bullets
+	case llm.BriefDeepDive:
+		m.brief.DeepDive = bullets
+	}
+}
+
+func briefSectionTitle(kind llm.BriefSectionKind) string {
+	switch kind {
+	case llm.BriefSummary:
+		return "Summary"
+	case llm.BriefTechnical:
+		return "Technical"
+	case llm.BriefDeepDive:
+		return "Deep Dive"
+	default:
+		return "Summary"
+	}
+}
+
+func briefSectionAnchor(kind llm.BriefSectionKind) string {
+	switch kind {
+	case llm.BriefSummary:
+		return anchorSummary
+	case llm.BriefTechnical:
+		return anchorTechnical
+	case llm.BriefDeepDive:
+		return anchorDeepDive
+	default:
+		return anchorSummary
+	}
+}
+
+func jobKindForSection(kind llm.BriefSectionKind) jobKind {
+	switch kind {
+	case llm.BriefSummary:
+		return jobKindBriefSummary
+	case llm.BriefTechnical:
+		return jobKindBriefTechnical
+	case llm.BriefDeepDive:
+		return jobKindBriefDeepDive
+	default:
+		return jobKindBriefSummary
+	}
+}
+
+func (m *model) launchBriefSections() tea.Cmd {
+	if m.paper == nil || m.config.LLM == nil {
+		return nil
+	}
+	cmds := []tea.Cmd{m.spinner.Tick}
+	for _, kind := range briefSectionKinds {
+		m.markBriefSectionRunning(kind)
+		cmds = append(cmds, m.jobBus.Start(jobKindForSection(kind), briefSectionJob(kind, "", m.config.LLM, m.paper)))
+	}
+	m.markViewportDirty()
+	return tea.Batch(cmds...)
+}
+
 func (m *model) actionSummarizeCmd() tea.Cmd {
 	if m.paper == nil {
 		m.infoMessage = "Load a paper before summarizing."
@@ -1071,15 +1213,16 @@ func (m *model) actionSummarizeCmd() tea.Cmd {
 		m.infoMessage = "Configure OpenAI or Ollama via flags to enable summaries."
 		return nil
 	}
+	if strings.TrimSpace(m.paper.FullText) == "" {
+		m.infoMessage = "PDF text missing; cannot build the reading brief."
+		return nil
+	}
 	if m.briefLoading {
 		m.infoMessage = "Reading brief already running."
 		return nil
 	}
-	m.brief = llm.ReadingBrief{}
-	m.briefLoading = true
 	m.infoMessage = "Generating LLM reading brief…"
-	m.markViewportDirty()
-	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindSummary, summarizePaperJob(m.config.LLM, m.paper)))
+	return m.launchBriefSections()
 }
 
 func (m *model) actionAskQuestionCmd() tea.Cmd {
@@ -1148,6 +1291,7 @@ func (m *model) actionToggleHelpCmd() tea.Cmd {
 func (m *model) actionLoadNewCmd() tea.Cmd {
 	m.stage = stageInput
 	m.paper = nil
+	m.resetBriefState()
 	m.cursorLine = 0
 	m.guide = nil
 	m.suggestions = nil
@@ -1305,8 +1449,7 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.persistedNotes = nil
 	m.suggestionLines = map[int]int{}
 	m.sectionAnchors = map[string]int{}
-	m.brief = llm.ReadingBrief{}
-	m.briefLoading = false
+	m.resetBriefState()
 	m.suggestionLoading = false
 	m.qaHistory = nil
 	m.questionLoading = false
@@ -1330,9 +1473,8 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 		m.infoMessage = fmt.Sprintf("Loaded %s. PDF text missing; skipping reading brief.", m.paper.Title)
 		return nil
 	}
-	m.briefLoading = true
 	m.infoMessage = fmt.Sprintf("Loaded %s. Building reading brief…", m.paper.Title)
-	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindSummary, summarizePaperJob(m.config.LLM, m.paper)))
+	return m.launchBriefSections()
 }
 
 func (m *model) handleSaveResult(msg saveResultMsg) tea.Cmd {
@@ -1358,20 +1500,31 @@ func (m *model) handleSaveResult(msg saveResultMsg) tea.Cmd {
 	return nil
 }
 
-func (m *model) handleBriefResult(msg briefResultMsg) tea.Cmd {
+func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 	if m.paper == nil || m.paper.ID != msg.paperID {
 		return nil
 	}
-	m.briefLoading = false
+	state := m.markBriefSectionResult(msg.kind, msg.err)
+	title := briefSectionTitle(msg.kind)
 	if msg.err != nil {
-		m.errorMessage = fmt.Sprintf("brief error: %v", msg.err)
+		state.Error = fmt.Sprintf("%s section error: %v", title, msg.err)
+		m.briefSections[msg.kind] = state
+		m.errorMessage = state.Error
 		m.infoMessage = "Press a to retry the reading brief."
-		m.appendTranscript("error", fmt.Sprintf("Brief failed: %v", msg.err))
+		m.appendTranscript("error", state.Error)
 	} else {
-		m.brief = msg.brief
+		m.updateBriefContent(msg.kind, msg.bullets)
 		m.errorMessage = ""
-		m.infoMessage = "Reading brief ready."
-		m.appendTranscript("brief", strings.Join(msg.brief.Summary, " | "))
+		if m.briefLoading {
+			m.infoMessage = fmt.Sprintf("%s section ready. Waiting on remaining sections…", title)
+		} else {
+			m.infoMessage = "Reading brief ready."
+		}
+		if len(msg.bullets) > 0 {
+			m.appendTranscript("brief", fmt.Sprintf("%s ready: %s", title, previewText(strings.Join(msg.bullets, " | "), transcriptPreviewLimit)))
+		} else {
+			m.appendTranscript("brief", fmt.Sprintf("%s ready.", title))
+		}
 	}
 	m.markViewportDirty()
 	return nil
@@ -1431,8 +1584,8 @@ func (m *model) handleJobPayload(payload tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handlePaperResult(msg)
 	case saveResultMsg:
 		return m, m.handleSaveResult(msg)
-	case briefResultMsg:
-		return m, m.handleBriefResult(msg)
+	case briefSectionMsg:
+		return m, m.handleBriefSectionResult(msg)
 	case questionResultMsg:
 		return m, m.handleQuestionResult(msg)
 	case suggestionResultMsg:
@@ -1453,7 +1606,15 @@ func (m *model) jobStatusBadges() []string {
 	if len(m.jobSnapshots) == 0 {
 		return nil
 	}
-	order := []jobKind{jobKindFetch, jobKindSummary, jobKindSuggest, jobKindSave, jobKindQuestion}
+	order := []jobKind{
+		jobKindFetch,
+		jobKindBriefSummary,
+		jobKindBriefTechnical,
+		jobKindBriefDeepDive,
+		jobKindSuggest,
+		jobKindSave,
+		jobKindQuestion,
+	}
 	var badges []string
 	for _, kind := range order {
 		snapshot, ok := m.jobSnapshots[kind]
@@ -1481,8 +1642,12 @@ func jobKindLabel(kind jobKind) string {
 	switch kind {
 	case jobKindFetch:
 		return "fetch"
-	case jobKindSummary:
-		return "brief"
+	case jobKindBriefSummary:
+		return "brief:summary"
+	case jobKindBriefTechnical:
+		return "brief:technical"
+	case jobKindBriefDeepDive:
+		return "brief:deepdive"
 	case jobKindSuggest:
 		return "suggest"
 	case jobKindSave:

@@ -15,11 +15,13 @@ type jobKind string
 type jobStatus string
 
 const (
-	jobKindFetch    jobKind = "fetch"
-	jobKindSummary  jobKind = "summary"
-	jobKindSuggest  jobKind = "suggest"
-	jobKindSave     jobKind = "save"
-	jobKindQuestion jobKind = "question"
+	jobKindFetch          jobKind = "fetch"
+	jobKindBriefSummary   jobKind = "brief_summary"
+	jobKindBriefTechnical jobKind = "brief_technical"
+	jobKindBriefDeepDive  jobKind = "brief_deepdive"
+	jobKindSuggest        jobKind = "suggest"
+	jobKindSave           jobKind = "save"
+	jobKindQuestion       jobKind = "question"
 )
 
 const (

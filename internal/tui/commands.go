@@ -42,15 +42,18 @@ func saveNotesJob(path string, entries []notes.Note) jobRunner {
 	}
 }
 
-func summarizePaperJob(client llm.Client, paper *arxiv.Paper) jobRunner {
+func briefSectionJob(kind llm.BriefSectionKind, contextText string, client llm.Client, paper *arxiv.Paper) jobRunner {
 	title := paper.Title
-	content := paper.FullText
 	paperID := paper.ID
 	return func(parent context.Context) (tea.Msg, error) {
 		ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
 		defer cancel()
-		brief, err := client.ReadingBrief(ctx, title, content)
-		return briefResultMsg{paperID: paperID, brief: brief, err: err}, err
+		content := contextText
+		if strings.TrimSpace(content) == "" {
+			content = paper.FullText
+		}
+		bullets, err := client.BriefSection(ctx, kind, title, content)
+		return briefSectionMsg{paperID: paperID, kind: kind, bullets: bullets, err: err}, err
 	}
 }
 

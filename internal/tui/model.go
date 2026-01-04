@@ -6,7 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"time
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -17,6 +17,7 @@ import (
 	"github.com/muesli/reflow/wordwrap"
 
 	"github.com/csheth/browse/internal/arxiv"
+	briefctx "github.com/csheth/browse/internal/brief/context"
 	"github.com/csheth/browse/internal/guide"
 	"github.com/csheth/browse/internal/llm"
 	"github.com/csheth/browse/internal/notes"
@@ -118,6 +119,8 @@ type model struct {
 	sectionAnchors          map[string]int
 	brief                   llm.ReadingBrief
 	briefSections           map[llm.BriefSectionKind]briefSectionState
+	briefContexts           map[llm.BriefSectionKind]string
+	briefChunks             []briefctx.Chunk
 	briefLoading            bool
 	suggestionLoading       bool
 	qaHistory               []qaExchange
@@ -1083,6 +1086,8 @@ func (m *model) resetBriefState() {
 	for _, kind := range briefSectionKinds {
 		m.briefSections[kind] = briefSectionState{}
 	}
+	m.briefContexts = nil
+	m.briefChunks = nil
 	m.briefLoading = false
 }
 
@@ -1191,6 +1196,27 @@ func jobKindForSection(kind llm.BriefSectionKind) jobKind {
 	}
 }
 
+func (m *model) ensureBriefContexts() map[llm.BriefSectionKind]string {
+	if m.paper == nil {
+		return nil
+	}
+	if len(m.briefContexts) == 0 {
+		builder := briefctx.NewBuilder(nil)
+		pkg := builder.Build(m.paper.FullText)
+		m.briefContexts = pkg.Sections
+		m.briefChunks = pkg.Chunks
+	}
+	return m.briefContexts
+}
+
+func (m *model) contextForSection(kind llm.BriefSectionKind) string {
+	contexts := m.ensureBriefContexts()
+	if contexts == nil {
+		return ""
+	}
+	return contexts[kind]
+}
+
 func (m *model) launchBriefSections() tea.Cmd {
 	if m.paper == nil || m.config.LLM == nil {
 		return nil
@@ -1198,7 +1224,8 @@ func (m *model) launchBriefSections() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick}
 	for _, kind := range briefSectionKinds {
 		m.markBriefSectionRunning(kind)
-		cmds = append(cmds, m.jobBus.Start(jobKindForSection(kind), briefSectionJob(kind, "", m.config.LLM, m.paper)))
+		ctx := m.contextForSection(kind)
+		cmds = append(cmds, m.jobBus.Start(jobKindForSection(kind), briefSectionJob(kind, ctx, m.config.LLM, m.paper)))
 	}
 	m.markViewportDirty()
 	return tea.Batch(cmds...)

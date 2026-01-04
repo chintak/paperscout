@@ -53,6 +53,7 @@ type Client interface {
 	SuggestNotes(ctx context.Context, title, abstract string, contributions []string, content string) ([]SuggestedNote, error)
 	ReadingBrief(ctx context.Context, title, content string) (ReadingBrief, error)
 	BriefSection(ctx context.Context, kind BriefSectionKind, title, content string) ([]string, error)
+	StreamBriefSection(ctx context.Context, kind BriefSectionKind, title, content string, handler BriefSectionStreamHandler) error
 	Name() string
 }
 
@@ -93,6 +94,16 @@ func BriefSectionLimit(kind BriefSectionKind) int {
 		return maxBriefChars
 	}
 }
+
+// BriefSectionDelta captures streaming updates for a given section.
+type BriefSectionDelta struct {
+	Kind    BriefSectionKind
+	Bullets []string
+	Done    bool
+}
+
+// BriefSectionStreamHandler receives streaming updates as they are generated.
+type BriefSectionStreamHandler func(delta BriefSectionDelta) error
 
 // NewFromEnv inspects CLI arguments & environment variables to build a client.
 func NewFromEnv(cfg Config) (Client, error) {

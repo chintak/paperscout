@@ -174,12 +174,12 @@ func TestOllamaClientBriefSection(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if !strings.Contains(payload.Prompt, "Write the summary section") {
-			t.Fatalf("prompt missing section directive: %s", payload.Prompt)
+		if !strings.Contains(payload.Prompt, "- bullet 1") && !strings.Contains(payload.Prompt, "Format:") {
+			t.Fatalf("prompt missing bullet format: %s", payload.Prompt)
 		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"response":"[\"bullet\"]","done":true}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"response":"- bullet one\n- bullet two","done":true}`)),
 			Header:     make(http.Header),
 		}, nil
 	})
@@ -193,7 +193,45 @@ func TestOllamaClientBriefSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("brief section failed: %v", err)
 	}
-	if len(items) != 1 || items[0] != "bullet" {
+	if len(items) != 2 || items[0] != "bullet one" {
 		t.Fatalf("unexpected items: %#v", items)
+	}
+}
+
+func TestOllamaClientStreamBriefSection(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"response":"- first bullet\n","done":false}`,
+		`{"response":"- second bullet","done":true}`,
+	}, "\n")
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(stream)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := &ollamaClient{
+		host:   "http://example.com",
+		model:  "ministral-3:latest",
+		client: &http.Client{Transport: rt},
+	}
+
+	var deltas []BriefSectionDelta
+	err := client.StreamBriefSection(context.Background(), BriefSummary, "Cool Paper", "content", func(delta BriefSectionDelta) error {
+		deltas = append(deltas, delta)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream brief section failed: %v", err)
+	}
+	if len(deltas) != 2 {
+		t.Fatalf("expected two deltas, got %d", len(deltas))
+	}
+	if !deltas[len(deltas)-1].Done {
+		t.Fatal("final delta should be marked done")
+	}
+	if len(deltas[len(deltas)-1].Bullets) != 2 {
+		t.Fatalf("final bullets missing: %#v", deltas[len(deltas)-1].Bullets)
 	}
 }

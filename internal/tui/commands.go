@@ -42,19 +42,36 @@ func saveNotesJob(path string, entries []notes.Note) jobRunner {
 	}
 }
 
-func briefSectionJob(kind llm.BriefSectionKind, contextText string, client llm.Client, paper *arxiv.Paper) jobRunner {
+func briefSectionJob(kind llm.BriefSectionKind, contextText string, client llm.Client, paper *arxiv.Paper, streamCtx context.Context) (jobRunner, <-chan llm.BriefSectionDelta) {
 	title := paper.Title
 	paperID := paper.ID
-	return func(parent context.Context) (tea.Msg, error) {
-		ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
+	updates := make(chan llm.BriefSectionDelta, 4)
+	runner := func(parent context.Context) (tea.Msg, error) {
+		ctx, cancel := context.WithTimeout(streamCtx, 2*time.Minute)
 		defer cancel()
 		content := contextText
 		if strings.TrimSpace(content) == "" {
 			content = paper.FullText
 		}
-		bullets, err := client.BriefSection(ctx, kind, title, content)
-		return briefSectionMsg{paperID: paperID, kind: kind, bullets: bullets, err: err}, err
+		var final []string
+		defer close(updates)
+		err := client.StreamBriefSection(ctx, kind, title, content, func(delta llm.BriefSectionDelta) error {
+			if len(delta.Bullets) > 0 {
+				final = append([]string(nil), delta.Bullets...)
+			}
+			select {
+			case updates <- delta:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		if err != nil {
+			return briefSectionMsg{paperID: paperID, kind: kind, err: err}, err
+		}
+		return briefSectionMsg{paperID: paperID, kind: kind, bullets: final}, nil
 	}
+	return runner, updates
 }
 
 func suggestNotesJob(client llm.Client, paper *arxiv.Paper) jobRunner {

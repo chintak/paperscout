@@ -178,3 +178,37 @@ func TestBriefSectionResultSetsError(t *testing.T) {
 		t.Fatal("error should clear loading flag")
 	}
 }
+
+func TestBriefSectionStreamUpdatesState(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
+	msg := briefSectionStreamMsg{
+		paperID: "1234.56789",
+		kind:    llm.BriefSummary,
+		bullets: []string{"partial"},
+		done:    true,
+	}
+	if cmd := m.handleBriefSectionStream(msg); cmd != nil {
+		t.Fatalf("expected no follow-up cmd when stream done")
+	}
+	if len(m.brief.Summary) != 1 || m.brief.Summary[0] != "partial" {
+		t.Fatalf("stream did not update summary: %#v", m.brief.Summary)
+	}
+}
+
+func TestBriefSectionStreamRequestsNextDelta(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
+	updates := make(chan llm.BriefSectionDelta)
+	msg := briefSectionStreamMsg{
+		paperID: "1234.56789",
+		kind:    llm.BriefTechnical,
+		bullets: []string{"partial"},
+		done:    false,
+		updates: updates,
+	}
+	if cmd := m.handleBriefSectionStream(msg); cmd == nil {
+		t.Fatal("expected command to wait for next stream delta")
+	}
+	close(updates)
+}

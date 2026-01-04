@@ -179,18 +179,22 @@ func buildBriefSectionPrompt(kind BriefSectionKind, title, context string) strin
 	var directives string
 	switch kind {
 	case BriefSummary:
-		directives = "Return exactly 3 bullets focused on (1) problem domain + strongest prior, (2) proposed approach + key contributions, (3) evaluation metrics + quantitative gains. Keep each bullet <=24 words."
+		directives = "Return exactly 3 bullets focused on (1) problem domain + strongest prior, (2) proposed approach + key contributions, (3) evaluation metrics + quantitative gains."
 	case BriefTechnical:
-		directives = "Return 3-5 bullets covering assumptions, datasets, model architecture, and evaluation/reproducibility details. Highlight crucial metrics or component names using **bold** markdown."
+		directives = "Return 3-5 bullets covering assumptions, datasets, model architecture, and evaluation/reproducibility details. Highlight crucial metrics using **bold** markdown sparingly."
 	case BriefDeepDive:
 		directives = "Return exactly 3 influential cited or related works to study next. Each bullet names the work and states the insight or why it matters."
 	default:
 		directives = "Return 3 concise bullets summarizing the paper."
 	}
 	return fmt.Sprintf(`You are guiding a researcher through S. Keshav's three-pass reading method.
-Write the %s section by following these constraints:
+Write the %s section with tight bullets that obey:
 %s
-Return ONLY a JSON array of strings such as ["bullet","bullet"].
+Format:
+- bullet 1
+- bullet 2
+- bullet 3
+Do NOT wrap output in JSON or prose; emit only the bullet lines.
 
 Paper title: %s
 
@@ -250,6 +254,9 @@ func parseBriefSection(raw string) ([]string, error) {
 			}
 		}
 	}
+	if lines := parseBulletLines(raw); len(lines) > 0 {
+		return lines, nil
+	}
 	return nil, fmt.Errorf("unable to parse brief section payload")
 }
 
@@ -264,6 +271,25 @@ func sanitizeBullets(items []string) []string {
 		cleaned = append(cleaned, item)
 	}
 	return cleaned
+}
+
+func parseBulletLines(raw string) []string {
+	lines := strings.Split(raw, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.Trim(line, ","))
+		if line == "" {
+			continue
+		}
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.Trim(line, `"`+"`")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return sanitizeBullets(cleaned)
 }
 
 func extractQuestionContext(content, question string, limit int) string {

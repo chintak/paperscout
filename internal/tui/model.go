@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -121,6 +122,7 @@ type model struct {
 	briefSections           map[llm.BriefSectionKind]briefSectionState
 	briefContexts           map[llm.BriefSectionKind]string
 	briefChunks             []briefctx.Chunk
+	briefStreamCancels      map[llm.BriefSectionKind]context.CancelFunc
 	briefLoading            bool
 	suggestionLoading       bool
 	qaHistory               []qaExchange
@@ -157,6 +159,14 @@ type briefSectionMsg struct {
 	kind    llm.BriefSectionKind
 	bullets []string
 	err     error
+}
+
+type briefSectionStreamMsg struct {
+	paperID string
+	kind    llm.BriefSectionKind
+	bullets []string
+	done    bool
+	updates <-chan llm.BriefSectionDelta
 }
 
 type questionResultMsg struct {
@@ -297,6 +307,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleSaveResult(msg)
 	case briefSectionMsg:
 		return m, m.handleBriefSectionResult(msg)
+	case briefSectionStreamMsg:
+		return m, m.handleBriefSectionStream(msg)
 	case questionResultMsg:
 		return m, m.handleQuestionResult(msg)
 	case suggestionResultMsg:
@@ -1081,6 +1093,11 @@ func (m *model) advanceSearch(delta int) {
 }
 
 func (m *model) resetBriefState() {
+	if len(m.briefStreamCancels) > 0 {
+		for _, cancel := range m.briefStreamCancels {
+			cancel()
+		}
+	}
 	m.brief = llm.ReadingBrief{}
 	m.briefSections = map[llm.BriefSectionKind]briefSectionState{}
 	for _, kind := range briefSectionKinds {
@@ -1088,6 +1105,7 @@ func (m *model) resetBriefState() {
 	}
 	m.briefContexts = nil
 	m.briefChunks = nil
+	m.briefStreamCancels = map[llm.BriefSectionKind]context.CancelFunc{}
 	m.briefLoading = false
 }
 
@@ -1196,6 +1214,25 @@ func jobKindForSection(kind llm.BriefSectionKind) jobKind {
 	}
 }
 
+func waitBriefSectionStream(paperID string, kind llm.BriefSectionKind, updates <-chan llm.BriefSectionDelta) tea.Cmd {
+	if updates == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		delta, ok := <-updates
+		if !ok {
+			return nil
+		}
+		return briefSectionStreamMsg{
+			paperID: paperID,
+			kind:    kind,
+			bullets: append([]string(nil), delta.Bullets...),
+			done:    delta.Done,
+			updates: updates,
+		}
+	}
+}
+
 func (m *model) ensureBriefContexts() map[llm.BriefSectionKind]string {
 	if m.paper == nil {
 		return nil
@@ -1223,9 +1260,21 @@ func (m *model) launchBriefSections() tea.Cmd {
 	}
 	cmds := []tea.Cmd{m.spinner.Tick}
 	for _, kind := range briefSectionKinds {
+		if m.briefStreamCancels == nil {
+			m.briefStreamCancels = map[llm.BriefSectionKind]context.CancelFunc{}
+		}
+		if cancel, ok := m.briefStreamCancels[kind]; ok {
+			cancel()
+		}
+		streamCtx, cancel := context.WithCancel(context.Background())
+		m.briefStreamCancels[kind] = cancel
 		m.markBriefSectionRunning(kind)
 		ctx := m.contextForSection(kind)
-		cmds = append(cmds, m.jobBus.Start(jobKindForSection(kind), briefSectionJob(kind, ctx, m.config.LLM, m.paper)))
+		runner, updates := briefSectionJob(kind, ctx, m.config.LLM, m.paper, streamCtx)
+		cmds = append(cmds, m.jobBus.Start(jobKindForSection(kind), runner))
+		if streamCmd := waitBriefSectionStream(m.paper.ID, kind, updates); streamCmd != nil {
+			cmds = append(cmds, streamCmd)
+		}
 	}
 	m.markViewportDirty()
 	return tea.Batch(cmds...)
@@ -1555,6 +1604,20 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 	}
 	m.markViewportDirty()
 	return nil
+}
+
+func (m *model) handleBriefSectionStream(msg briefSectionStreamMsg) tea.Cmd {
+	if m.paper == nil || m.paper.ID != msg.paperID {
+		return nil
+	}
+	if len(msg.bullets) > 0 {
+		m.updateBriefContent(msg.kind, msg.bullets)
+		m.markViewportDirty()
+	}
+	if msg.done {
+		return nil
+	}
+	return waitBriefSectionStream(msg.paperID, msg.kind, msg.updates)
 }
 
 func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {

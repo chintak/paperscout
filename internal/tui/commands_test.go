@@ -23,6 +23,9 @@ func (fakeLLM) ReadingBrief(ctx context.Context, title, content string) (llm.Rea
 func (fakeLLM) BriefSection(ctx context.Context, kind llm.BriefSectionKind, title, content string) ([]string, error) {
 	return nil, nil
 }
+func (fakeLLM) StreamBriefSection(ctx context.Context, kind llm.BriefSectionKind, title, content string, handler llm.BriefSectionStreamHandler) error {
+	return handler(llm.BriefSectionDelta{Kind: kind, Bullets: []string{"bullet"}, Done: true})
+}
 func (fakeLLM) Name() string { return "fake" }
 
 func newTestModel(t *testing.T) *model {

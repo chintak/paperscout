@@ -81,6 +81,18 @@ func (c *openAIClient) BriefSection(ctx context.Context, kind BriefSectionKind, 
 	return parseBriefSection(raw)
 }
 
+func (c *openAIClient) StreamBriefSection(ctx context.Context, kind BriefSectionKind, title, content string, handler BriefSectionStreamHandler) error {
+	bullets, err := c.BriefSection(ctx, kind, title, content)
+	if err != nil {
+		return err
+	}
+	return handler(BriefSectionDelta{
+		Kind:    kind,
+		Bullets: bullets,
+		Done:    true,
+	})
+}
+
 func (c *openAIClient) chat(ctx context.Context, prompt string) (string, error) {
 	payload := map[string]any{
 		"model": c.model,

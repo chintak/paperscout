@@ -26,7 +26,10 @@ const (
 	maxSummaryChars    = 18_000
 	maxAnswerChars     = 12_000
 	maxSuggestionChars = 12_000
+	maxBriefChars      = 18_000
 )
+
+const defaultLLMHTTPTimeout = 3 * time.Minute
 
 // Config describes how to build an LLM client.
 type Config struct {
@@ -43,6 +46,7 @@ type Client interface {
 	Summarize(ctx context.Context, title, content string) (string, error)
 	Answer(ctx context.Context, title, question, content string) (string, error)
 	SuggestNotes(ctx context.Context, title, abstract string, contributions []string, content string) ([]SuggestedNote, error)
+	ReadingBrief(ctx context.Context, title, content string) (ReadingBrief, error)
 	Name() string
 }
 
@@ -52,6 +56,13 @@ type SuggestedNote struct {
 	Body   string `json:"body"`
 	Reason string `json:"reason"`
 	Kind   string `json:"kind"`
+}
+
+// ReadingBrief captures the three-pass inspired sections rendered in the UI.
+type ReadingBrief struct {
+	Summary   []string `json:"summary"`
+	Technical []string `json:"technical"`
+	DeepDive  []string `json:"deepDive"`
 }
 
 // NewFromEnv inspects CLI arguments & environment variables to build a client.
@@ -130,5 +141,6 @@ func pickHTTPClient(custom *http.Client) *http.Client {
 	if custom != nil {
 		return custom
 	}
-	return &http.Client{Timeout: 60 * time.Second}
+	// Allow longer-running generations (Ollama often needs >60s) and rely on the caller's context for cancellation.
+	return &http.Client{Timeout: defaultLLMHTTPTimeout}
 }

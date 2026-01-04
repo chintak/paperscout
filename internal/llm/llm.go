@@ -23,10 +23,12 @@ const (
 
 	defaultOpenAIModel = "gpt-4o-mini"
 	defaultOllamaModel = "ministral-3:latest"
-	maxSummaryChars    = 18_000
-	maxAnswerChars     = 12_000
-	maxSuggestionChars = 12_000
-	maxBriefChars      = 18_000
+	// Context clipping guards assume ministral-3:latest exposes a 262k-token window (~1M characters).
+	// We cap prompts well below that to keep >=20% headroom (roughly 4 chars/token) and avoid OOMs.
+	maxSummaryChars    = 200_000
+	maxAnswerChars     = 120_000
+	maxSuggestionChars = 150_000
+	maxBriefChars      = 200_000
 )
 
 const defaultLLMHTTPTimeout = 3 * time.Minute

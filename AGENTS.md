@@ -66,9 +66,9 @@ PaperScout runs entirely on beads. Treat `.beads/issues.jsonl` as the canonical 
 - `ollama show <model_name>` – inspect the active LLM’s capabilities (context length, quantization, default sampling params) before shaping prompts or trimming paper context.
 
 ### LLM Context Guidelines
-- Before prompting the Summary/Technical/Deep Dive sections, run `ollama show $OLLAMA_MODEL` (default `qwen3-vl:8b`, 262 144 token context) to confirm the actual context length and sampling defaults on the workstation.
-- Keep our `max*Chars` guards in `internal/llm/llm.go` aligned with the discovered context window so prompts stay comfortably below the limit (leave at least 20% headroom for instructions/system text).
-- If switching models, document the new context length in a bead comment and adjust any clipping logic/tests in the same change so future agents inherit the right budgets.
+- Before prompting the Summary/Technical/Deep Dive sections, run `ollama show $OLLAMA_MODEL` (default `ministral-3:latest`, 262 144 token context per the latest check) to confirm the actual context length and sampling defaults on the workstation.
+- Keep our `max*Chars` guards in `internal/llm/llm.go` aligned with the discovered context window so prompts stay comfortably below the limit (leave at least 20% headroom for instructions/system text). If the default model changes, update these constants and corresponding tests in the same bead.
+- When increasing or decreasing available context (model swap, new truncation heuristics, etc.), add a README note describing the new default and context budget so future agents inherit the requirement without re-measuring.
 
 ## Coding Standards
 - Follow idiomatic Go naming: exported identifiers in PascalCase; CLI flags in kebab-case.

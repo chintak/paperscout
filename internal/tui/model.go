@@ -47,6 +47,23 @@ func New(config Config) tea.Model {
 	composer.CharLimit = 2000
 	composer.SetWidth(80)
 	composer.SetHeight(4)
+	composer.ShowLineNumbers = false
+	composer.Prompt = ""
+	composer.EndOfBufferCharacter = ' '
+	composer.FocusedStyle.Base = composerFocusedBaseStyle
+	composer.FocusedStyle.CursorLine = composerCursorLineFocusedStyle
+	composer.FocusedStyle.CursorLineNumber = lipgloss.NewStyle()
+	composer.FocusedStyle.LineNumber = lipgloss.NewStyle()
+	composer.FocusedStyle.Placeholder = composerPlaceholderStyle
+	composer.FocusedStyle.Prompt = composerPromptStyle
+	composer.FocusedStyle.Text = composerFocusedTextStyle
+	composer.BlurredStyle.Base = composerBlurredBaseStyle
+	composer.BlurredStyle.CursorLine = composerCursorLineBlurredStyle
+	composer.BlurredStyle.CursorLineNumber = lipgloss.NewStyle()
+	composer.BlurredStyle.LineNumber = lipgloss.NewStyle()
+	composer.BlurredStyle.Placeholder = composerPlaceholderStyle
+	composer.BlurredStyle.Prompt = composerPromptStyle
+	composer.BlurredStyle.Text = composerBlurredTextStyle
 
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
@@ -1818,22 +1835,40 @@ var (
 	heroTextColor          = lipgloss.Color("#fff4d0")
 	heroSecondaryTextColor = lipgloss.Color("#ffb347")
 
-	heroTitleStyle           = lipgloss.NewStyle().Bold(true).Foreground(heroAccentColor)
-	heroBoxStyle             = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(heroAccentColor).Foreground(heroTextColor).Background(heroEmberColor).Padding(1, 2)
-	heroSummaryStyle         = lipgloss.NewStyle().PaddingLeft(2)
-	taglineStyle             = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Italic(true)
-	statusBarStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6")).Padding(0, 1)
-	keyStyle                 = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#ffd166")).Padding(0, 1)
-	keyDescStyle             = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0def4"))
-	legendBoxStyle           = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#56526e")).Padding(1, 2)
-	helpBoxStyle             = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("#7f5af0")).Padding(1, 2)
-	currentLineStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6"))
-	selectionLineStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#bde0fe"))
-	persistedSuggestionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#a3be8c")).Italic(true)
-	logoFaceStyle            = lipgloss.NewStyle().Bold(true).Foreground(heroTextColor).Background(heroEmberColor)
-	logoShadowStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#110600"))
-	logoContainerStyle       = lipgloss.NewStyle().Padding(0, 1)
-	logoArtLines             = []string{
+	composerFocusedBackgroundColor = lipgloss.Color("#231507")
+	composerBlurredBackgroundColor = lipgloss.Color("#170c04")
+	composerCursorLineFocusedColor = lipgloss.Color("#3b200b")
+	composerCursorLineBlurredColor = lipgloss.Color("#251307")
+
+	heroTitleStyle                 = lipgloss.NewStyle().Bold(true).Foreground(heroAccentColor)
+	heroBoxStyle                   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(heroAccentColor).Foreground(heroTextColor).Background(heroEmberColor).Padding(1, 2)
+	heroSummaryStyle               = lipgloss.NewStyle().PaddingLeft(2)
+	taglineStyle                   = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Italic(true)
+	statusBarStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6")).Padding(0, 1)
+	keyStyle                       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#ffd166")).Padding(0, 1)
+	keyDescStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0def4"))
+	legendBoxStyle                 = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#56526e")).Padding(1, 2)
+	helpBoxStyle                   = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("#7f5af0")).Padding(1, 2)
+	currentLineStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6"))
+	selectionLineStyle             = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#bde0fe"))
+	persistedSuggestionStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#a3be8c")).Italic(true)
+	logoFaceStyle                  = lipgloss.NewStyle().Bold(true).Foreground(heroTextColor).Background(heroEmberColor)
+	logoShadowStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("#110600"))
+	logoContainerStyle             = lipgloss.NewStyle().Padding(0, 1)
+	composerFocusedBaseStyle       = lipgloss.NewStyle().Background(composerFocusedBackgroundColor)
+	composerBlurredBaseStyle       = lipgloss.NewStyle().Background(composerBlurredBackgroundColor)
+	composerCursorLineFocusedStyle = lipgloss.NewStyle().
+					Background(composerCursorLineFocusedColor).
+					Foreground(heroTextColor)
+	composerCursorLineBlurredStyle = lipgloss.NewStyle().
+					Background(composerCursorLineBlurredColor).
+					Foreground(heroSecondaryTextColor)
+	composerFocusedTextStyle = lipgloss.NewStyle().Foreground(heroTextColor)
+	composerBlurredTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
+	composerPlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1c27a")).Italic(true)
+	composerPromptStyle      = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
+
+	logoArtLines = []string{
 		"██████╗    █████╗   ██████╗   ███████╗  ██████╗   ███████╗   ██████╗   ██████╗   ██╗   ██╗  ████████╗  ",
 		"██╔══██╗  ██╔══██╗  ██╔══██╗  ██╔════╝  ██╔══██╗  ██╔════╝  ██╔════╝  ██╔═══██╗  ██║   ██║  ╚══██╔══╝  ",
 		"██████╔╝  ███████║  ██████╔╝  █████╗    ██████╔╝  ███████╗  ██║       ██║   ██║  ██║   ██║     ██║     ",

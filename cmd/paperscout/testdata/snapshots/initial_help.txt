@@ -14,10 +14,10 @@ Paste an arXiv url or identifier to begin.
 
 Composer
 
-┃  1 Paste an arXiv URL or identifier…
-┃  ~
-┃  ~
-┃  ~
+Paste an arXiv URL or identifier…
+
+
+
 
 Enter to fetch • Esc to clear
 
@@ -26,4 +26,4 @@ Enter to fetch • Esc to clear
 Session Log
 
 Interactions will appear here once you load a paper. ██████╗    █████╗   ██████╗   ███████╗  ██████╗   ███████╗   ██████╗   ██████╗   ██╗   ██╗  ███████
-┃  1 ?
+?

@@ -40,6 +40,7 @@ func (l *pageLayout) Update(width, height int) {
 		l.composerHeight = 3
 	}
 	const chrome = 8
+	const footerStatusHeight = 1
 	usable := height - chrome - l.composerHeight
 	if usable < 12 {
 		usable = 12
@@ -48,7 +49,7 @@ func (l *pageLayout) Update(width, height int) {
 	if l.transcriptHeight < 6 {
 		l.transcriptHeight = 6
 	}
-	contentHeight := usable - l.transcriptHeight
+	contentHeight := usable - l.transcriptHeight - footerStatusHeight
 	if contentHeight < 6 {
 		contentHeight = 6
 	}

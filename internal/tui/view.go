@@ -43,7 +43,7 @@ func (m *model) viewInput() string {
 	}
 	sections = append(sections, form.String())
 	body := strings.Join(sections, "\n\n")
-	return joinNonEmpty([]string{body, m.composerPanel()})
+	return joinNonEmpty([]string{body, m.composerPanel(), m.footerView()})
 }
 
 func (m *model) viewDisplay() string {
@@ -53,17 +53,11 @@ func (m *model) viewDisplay() string {
 	m.refreshTranscriptIfDirty()
 	m.refreshViewportIfDirty()
 	body := m.renderStackedDisplay()
-	return joinNonEmpty([]string{body, m.composerPanel()})
+	return joinNonEmpty([]string{body, m.composerPanel(), m.footerView()})
 }
 
 func (m *model) renderStackedDisplay() string {
 	parts := []string{m.heroView()}
-	if meter := m.sessionMeterView(); meter != "" {
-		parts = append(parts, meter)
-	}
-	if transcript := m.transcriptPanel(); transcript != "" {
-		parts = append(parts, transcript)
-	}
 	parts = append(parts, m.viewport.View())
 	if status := m.searchStatusLine(); status != "" {
 		parts = append(parts, helperStyle.Render(status))
@@ -87,23 +81,29 @@ func (m *model) renderStackedDisplay() string {
 	return joinNonEmpty(parts)
 }
 
-func (m *model) transcriptPanel() string {
-	body := strings.TrimSpace(m.transcriptViewport.View())
-	if body == "" {
-		body = helperStyle.Render("Interactions will appear here once you load a paper.")
-	}
-	return joinNonEmpty([]string{
-		sectionHeaderStyle.Render("Session Log"),
-		body,
-	})
-}
-
 func (m *model) composerPanel() string {
 	return joinNonEmpty([]string{
 		sectionHeaderStyle.Render("Composer"),
 		m.composer.View(),
 		helperStyle.Render(m.composerHelpText()),
 	})
+}
+
+func (m *model) footerView() string {
+	m.refreshTranscriptIfDirty()
+	logBody := strings.TrimSpace(m.transcriptViewport.View())
+	if logBody == "" {
+		logBody = helperStyle.Render("Interactions will appear here once you load a paper.")
+	}
+	footer := []string{}
+	if meter := m.sessionMeterView(); meter != "" {
+		footer = append(footer, meter)
+	}
+	footer = append(footer, joinNonEmpty([]string{
+		sectionHeaderStyle.Render("Session Log"),
+		logBody,
+	}))
+	return joinNonEmpty(footer)
 }
 
 func (m *model) composerHelpText() string {
@@ -126,7 +126,7 @@ func (m *model) viewSearch() string {
 	b.WriteString(m.searchInput.View())
 	b.WriteRune('\n')
 	b.WriteString(helperStyle.Render("Press Enter to apply search, Esc to cancel."))
-	return joinNonEmpty([]string{m.frameWithHero(b.String()), m.composerPanel()})
+	return joinNonEmpty([]string{m.frameWithHero(b.String()), m.composerPanel(), m.footerView()})
 }
 
 func (m *model) viewPalette() string {
@@ -154,7 +154,7 @@ func (m *model) viewPalette() string {
 			b.WriteRune('\n')
 		}
 	}
-	return joinNonEmpty([]string{m.frameWithHero(b.String()), m.composerPanel()})
+	return joinNonEmpty([]string{m.frameWithHero(b.String()), m.composerPanel(), m.footerView()})
 }
 
 func (m *model) heroView() string {

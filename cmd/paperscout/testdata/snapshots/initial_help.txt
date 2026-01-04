@@ -19,5 +19,11 @@ Composer
 ┃  ~
 ┃  ~
 
-Enter to fetch • Esc to clear ██████╗    █████╗   ██████╗   ███████╗  ██████╗   ███████╗   ██████╗   ██████╗   ██╗   ██╗  ███████
+Enter to fetch • Esc to clear
+
+ Mode NORMAL  •  Summary 0  •  Technical 0  •  DeepDive 0  •  Q&A 0  •  Brief pending
+
+Session Log
+
+Interactions will appear here once you load a paper. ██████╗    █████╗   ██████╗   ███████╗  ██████╗   ███████╗   ██████╗   ██████╗   ██╗   ██╗  ███████
 ┃  1 ?

@@ -51,7 +51,7 @@ PaperScout runs entirely on beads. Treat `.beads/issues.jsonl` as the canonical 
 - Reference bead IDs in commit subjects (`feat: improve parsing (bd-123)`) so git history mirrors the bead ledger.
 
 ## Standard Task Loop
-1. **Plan** – Skim this playbook plus the bead you are working on; write a short plan for non-trivial work.
+1. **Plan** – Skim this playbook, the README (for any updated guidance or setup instructions), plus the bead you are working on; write a short plan for non-trivial work.
 2. **Develop** – Implement inside the correct package; keep Bubble Tea updates pure and isolate side effects inside commands.
 3. **Format & Lint** – Run `gofmt`/`goimports` on touched Go files; keep files under ~300 LOC by extracting helpers.
 4. **Test** – Maintain `_test.go` coverage for each touched package, then run `go test ./...`.
@@ -63,6 +63,12 @@ PaperScout runs entirely on beads. Treat `.beads/issues.jsonl` as the canonical 
 - `go build ./cmd/paperscout` – compile the CLI for smoke tests.
 - `go test ./...` – execute the full unit suite for `internal/*`.
 - `bd ready --json`, `bd show bd-### --json`, `bd update ...`, `bd close ...` – daily bead hygiene commands.
+- `ollama show <model_name>` – inspect the active LLM’s capabilities (context length, quantization, default sampling params) before shaping prompts or trimming paper context.
+
+### LLM Context Guidelines
+- Before prompting the Summary/Technical/Deep Dive sections, run `ollama show $OLLAMA_MODEL` (default `qwen3-vl:8b`, 262 144 token context) to confirm the actual context length and sampling defaults on the workstation.
+- Keep our `max*Chars` guards in `internal/llm/llm.go` aligned with the discovered context window so prompts stay comfortably below the limit (leave at least 20% headroom for instructions/system text).
+- If switching models, document the new context length in a bead comment and adjust any clipping logic/tests in the same change so future agents inherit the right budgets.
 
 ## Coding Standards
 - Follow idiomatic Go naming: exported identifiers in PascalCase; CLI flags in kebab-case.

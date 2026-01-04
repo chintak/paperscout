@@ -130,6 +130,61 @@ func sanitizeSuggestedNotes(notes []SuggestedNote) []SuggestedNote {
 	return result
 }
 
+func buildBriefPrompt(title, context string) string {
+	if title == "" {
+		title = "the paper"
+	}
+	return fmt.Sprintf(`You are guiding a researcher through S. Keshav's three-pass reading method.
+Summarize the paper into three sections with concise bullet lists as described:
+- summary: exactly 3 bullets. Bullet 1 states the problem domain & strongest competing prior work. Bullet 2 describes the proposed approach + key contributions. Bullet 3 states evaluation metrics + quantitative improvement over baselines.
+- technical: 3-5 bullets detailing assumptions, datasets, model architecture, training/eval protocol, and reproducibility notes. Highlight key phrases using **bold** markdown.
+- deepDive: 3 influential cited or related works to study next, each noting the insight they provide.
+Return ONLY JSON formatted as {"summary":[""],"technical":[""],"deepDive":[""]} with non-empty strings.
+
+Paper title: %s
+
+Context:
+%s`, title, context)
+}
+
+func parseReadingBrief(raw string) (ReadingBrief, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ReadingBrief{}, fmt.Errorf("empty brief response")
+	}
+	candidates := []string{raw}
+	if start := strings.Index(raw, "{"); start >= 0 {
+		if end := strings.LastIndex(raw, "}"); end > start {
+			candidates = append(candidates, raw[start:end+1])
+		}
+	}
+	for _, candidate := range candidates {
+		var brief ReadingBrief
+		if err := json.Unmarshal([]byte(candidate), &brief); err == nil {
+			brief.Summary = sanitizeBullets(brief.Summary)
+			brief.Technical = sanitizeBullets(brief.Technical)
+			brief.DeepDive = sanitizeBullets(brief.DeepDive)
+			if len(brief.Summary) > 0 || len(brief.Technical) > 0 || len(brief.DeepDive) > 0 {
+				return brief, nil
+			}
+		}
+	}
+	return ReadingBrief{}, fmt.Errorf("unable to parse brief payload")
+}
+
+func sanitizeBullets(items []string) []string {
+	var cleaned []string
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		item = whitespaceRe.ReplaceAllString(item, " ")
+		cleaned = append(cleaned, item)
+	}
+	return cleaned
+}
+
 func extractQuestionContext(content, question string, limit int) string {
 	content = strings.TrimSpace(content)
 	if content == "" {

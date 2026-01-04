@@ -55,6 +55,19 @@ func (c *openAIClient) SuggestNotes(ctx context.Context, title, abstract string,
 	return parseSuggestedNotes(raw)
 }
 
+func (c *openAIClient) ReadingBrief(ctx context.Context, title, content string) (ReadingBrief, error) {
+	context := clipText(content, maxBriefChars)
+	if context == "" {
+		return ReadingBrief{}, fmt.Errorf("paper text empty; cannot build brief")
+	}
+	prompt := buildBriefPrompt(title, context)
+	raw, err := c.chat(ctx, prompt)
+	if err != nil {
+		return ReadingBrief{}, err
+	}
+	return parseReadingBrief(raw)
+}
+
 func (c *openAIClient) chat(ctx context.Context, prompt string) (string, error) {
 	payload := map[string]any{
 		"model": c.model,

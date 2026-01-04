@@ -1,0 +1,10 @@
+[
+  {
+    "paperId": "fixture:001",
+    "paperTitle": "Fixture Paper",
+    "title": "Seed Note",
+    "body": "This is a placeholder entry used by integration tests.",
+    "kind": "summary",
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+]

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,25 +30,21 @@ type Config struct {
 
 // New returns a tea.Model ready to be mounted into a Program.
 func New(config Config) tea.Model {
-	urlInput := textinput.New()
-	urlInput.Placeholder = "https://arxiv.org/abs/2101.00001"
-	urlInput.Focus()
-	urlInput.CharLimit = 120
-	urlInput.Width = 70
-
-	noteInput := textinput.New()
-	noteInput.CharLimit = 280
-	noteInput.Width = 70
-
 	searchInput := textinput.New()
 	searchInput.Placeholder = "Search within the current paper…"
 	searchInput.CharLimit = 120
 	searchInput.Width = 60
 
-	questionInput := textinput.New()
-	questionInput.Placeholder = "Ask a question about the paper…"
-	questionInput.CharLimit = 200
-	questionInput.Width = 70
+	paletteInput := textinput.New()
+	paletteInput.Placeholder = "Filter commands…"
+	paletteInput.CharLimit = 80
+	paletteInput.Width = 50
+
+	composer := textarea.New()
+	composer.Placeholder = composerNotePlaceholder
+	composer.CharLimit = 2000
+	composer.SetWidth(80)
+	composer.SetHeight(4)
 
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
@@ -56,115 +52,87 @@ func New(config Config) tea.Model {
 	vp := viewport.New(80, 20)
 	vp.MouseWheelEnabled = true
 
-	return &model{
-		config:             config,
-		stage:              stageInput,
-		mode:               modeNormal,
-		urlInput:           urlInput,
-		noteInput:          noteInput,
-		searchInput:        searchInput,
-		questionInput:      questionInput,
-		spinner:            spin,
-		viewport:           vp,
-		selected:           map[int]bool{},
-		persisted:          map[int]bool{},
-		suggestionLines:    map[int]int{},
-		cursorLine:         0,
-		searchMatchIdx:     -1,
-		viewportDirty:      true,
-		infoMessage:        "Paste an arXiv url or identifier to begin.",
-		sectionAnchors:     map[string]int{},
-		pendingFocusAnchor: "",
+	logViewport := viewport.New(80, 10)
+	logViewport.MouseWheelEnabled = true
+
+	m := &model{
+		config:                  config,
+		stage:                   stageInput,
+		mode:                    modeNormal,
+		searchInput:             searchInput,
+		spinner:                 spin,
+		viewport:                vp,
+		transcriptViewport:      logViewport,
+		composer:                composer,
+		selected:                map[int]bool{},
+		persisted:               map[int]bool{},
+		suggestionLines:         map[int]int{},
+		cursorLine:              0,
+		searchMatchIdx:          -1,
+		viewportDirty:           true,
+		infoMessage:             "Paste an arXiv url or identifier to begin.",
+		sectionAnchors:          map[string]int{},
+		pendingFocusAnchor:      "",
+		jobBus:                  newJobBus(),
+		jobSnapshots:            map[jobKind]jobSnapshot{},
+		layout:                  newPageLayout(),
+		paletteInput:            paletteInput,
+		transcriptViewportDirty: true,
 	}
+
+	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+	return m
 }
-
-type stage int
-
-const (
-	stageInput stage = iota
-	stageLoading
-	stageDisplay
-	stageNoteEntry
-	stageSearch
-	stageQuestion
-	stageSaving
-)
-
-const (
-	anchorContributions = "contributions"
-	anchorGuide         = "guide"
-	anchorSummary       = "summary"
-	anchorSuggestions   = "suggestions"
-	anchorSaved         = "saved"
-	anchorManual        = "manual"
-	anchorQA            = "qa"
-)
-
-var sectionSequence = []string{
-	anchorContributions,
-	anchorGuide,
-	anchorSummary,
-	anchorSuggestions,
-	anchorSaved,
-	anchorManual,
-	anchorQA,
-}
-
-const heroTagline = "Navigate arXiv findings with PaperScout."
-
-const (
-	minViewportWidth          = 40
-	viewportHorizontalPadding = 4
-)
-
-type interactionMode int
-
-const (
-	modeNormal interactionMode = iota
-	modeInsert
-	modeHighlight
-)
 
 type model struct {
 	config Config
 	stage  stage
 
-	urlInput      textinput.Model
-	noteInput     textinput.Model
-	searchInput   textinput.Model
-	questionInput textinput.Model
-	spinner       spinner.Model
-	viewport      viewport.Model
+	searchInput        textinput.Model
+	spinner            spinner.Model
+	viewport           viewport.Model
+	transcriptViewport viewport.Model
+	composer           textarea.Model
 
-	paper              *arxiv.Paper
-	guide              []guide.Step
-	suggestions        []notes.Candidate
-	selected           map[int]bool
-	persisted          map[int]bool
-	mode               interactionMode
-	cursorLine         int
-	lineCount          int
-	manualNotes        []notes.Note
-	persistedNotes     []notes.Note
-	suggestionLines    map[int]int
-	viewportLines      []string
-	viewportContent    string
-	viewportDirty      bool
-	searchQuery        string
-	searchMatches      []matchRange
-	searchMatchIdx     int
-	infoMessage        string
-	errorMessage       string
-	helpVisible        bool
-	sectionAnchors     map[string]int
-	summary            string
-	summaryLoading     bool
-	suggestionLoading  bool
-	qaHistory          []qaExchange
-	questionLoading    bool
-	selectionAnchor    int
-	selectionActive    bool
-	pendingFocusAnchor string
+	paper                   *arxiv.Paper
+	guide                   []guide.Step
+	suggestions             []notes.Candidate
+	selected                map[int]bool
+	persisted               map[int]bool
+	mode                    interactionMode
+	cursorLine              int
+	lineCount               int
+	manualNotes             []notes.Note
+	persistedNotes          []notes.Note
+	suggestionLines         map[int]int
+	viewportLines           []string
+	viewportContent         string
+	viewportDirty           bool
+	searchQuery             string
+	searchMatches           []matchRange
+	searchMatchIdx          int
+	infoMessage             string
+	errorMessage            string
+	helpVisible             bool
+	sectionAnchors          map[string]int
+	brief                   llm.ReadingBrief
+	briefLoading            bool
+	suggestionLoading       bool
+	qaHistory               []qaExchange
+	questionLoading         bool
+	selectionAnchor         int
+	selectionActive         bool
+	pendingFocusAnchor      string
+	jobBus                  *jobBus
+	jobSnapshots            map[jobKind]jobSnapshot
+	layout                  pageLayout
+	paletteInput            textinput.Model
+	paletteMatches          []uiCommand
+	paletteCursor           int
+	paletteReturnStage      stage
+	transcriptEntries       []transcriptEntry
+	transcriptViewportDirty bool
+	composerMode            composerMode
 }
 
 type paperResultMsg struct {
@@ -179,9 +147,9 @@ type saveResultMsg struct {
 	err   error
 }
 
-type summaryResultMsg struct {
+type briefResultMsg struct {
 	paperID string
-	summary string
+	brief   llm.ReadingBrief
 	err     error
 }
 
@@ -198,12 +166,39 @@ type suggestionResultMsg struct {
 	err         error
 }
 
-type qaExchange struct {
-	Question string
-	Answer   string
-	Error    string
-	Pending  bool
-	AskedAt  time.Time
+type actionID string
+
+type uiCommand struct {
+	id          actionID
+	title       string
+	description string
+	shortcut    string
+}
+
+type transcriptEntry struct {
+	Kind      string
+	Content   string
+	Timestamp time.Time
+}
+
+const (
+	actionSummarize   actionID = "summarize"
+	actionAskQuestion actionID = "ask_question"
+	actionManualNote  actionID = "manual_note"
+	actionSearch      actionID = "search"
+	actionSaveNotes   actionID = "save_notes"
+	actionToggleHelp  actionID = "toggle_help"
+	actionLoadNew     actionID = "load_new"
+)
+
+var paletteCommands = []uiCommand{
+	{id: actionSummarize, title: "Summarize paper", description: "Regenerate the LLM reading brief for the loaded PDF", shortcut: "a"},
+	{id: actionAskQuestion, title: "Ask a question", description: "Open the Q&A prompt", shortcut: "q"},
+	{id: actionManualNote, title: "Add manual note", description: "Draft a manual note", shortcut: "m"},
+	{id: actionSearch, title: "Search within paper", description: "Filter the current session by text", shortcut: "/"},
+	{id: actionSaveNotes, title: "Save manual notes", description: "Persist any manual notes you drafted this session", shortcut: "s"},
+	{id: actionToggleHelp, title: "Toggle help overlay", description: "Show or hide the command cheatsheet", shortcut: "?"},
+	{id: actionLoadNew, title: "Load another paper", description: "Return to the URL prompt", shortcut: "r"},
 }
 
 func (m *model) Init() tea.Cmd {
@@ -212,36 +207,42 @@ func (m *model) Init() tea.Cmd {
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case jobSignalMsg:
+		m.recordJobSnapshot(msg.Snapshot)
+		return m, nil
+	case jobResultEnvelope:
+		m.recordJobSnapshot(msg.Snapshot)
+		if msg.Payload == nil {
+			return m, nil
+		}
+		return m.handleJobPayload(msg.Payload)
 	case spinner.TickMsg:
-		if m.stage == stageLoading || m.stage == stageSaving || m.summaryLoading || m.questionLoading || m.suggestionLoading {
+		if m.stage == stageLoading || m.stage == stageSaving || m.briefLoading || m.questionLoading || m.suggestionLoading {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlK {
+			if m.stage == stagePalette {
+				m.closeCommandPalette()
+			} else {
+				m.openCommandPalette()
+			}
+			return m, nil
+		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEsc:
 			switch m.stage {
-			case stageNoteEntry:
-				m.stage = stageDisplay
-				m.mode = modeNormal
-				m.selectionActive = false
-				m.noteInput.SetValue("")
-				m.infoMessage = "Insert mode canceled."
-				m.markViewportDirty()
-				return m, nil
 			case stageSearch:
 				m.stage = stageDisplay
 				m.searchInput.Blur()
 				return m, nil
-			case stageQuestion:
-				m.stage = stageDisplay
-				m.questionInput.SetValue("")
-				m.questionInput.Blur()
-				m.markViewportDirty()
+			case stagePalette:
+				m.closeCommandPalette()
 				return m, nil
 			case stageDisplay:
 				if m.mode == modeHighlight {
@@ -259,151 +260,42 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		if m.stage == stageDisplay {
+			var cmds []tea.Cmd
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
-			return m, cmd
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			m.transcriptViewport, cmd = m.transcriptViewport.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
 		}
 		return m, nil
 	case paperResultMsg:
-		if msg.err != nil {
-			m.stage = stageInput
-			m.errorMessage = msg.err.Error()
-			m.infoMessage = "Try another arXiv identifier."
-			return m, nil
-		}
-		m.paper = msg.paper
-		m.guide = msg.guide
-		m.suggestions = msg.suggestions
-		m.stage = stageDisplay
-		m.mode = modeNormal
-		m.cursorLine = 0
-		m.selected = map[int]bool{}
-		m.persisted = map[int]bool{}
-		m.manualNotes = []notes.Note{}
-		m.persistedNotes = nil
-		m.suggestionLines = map[int]int{}
-		m.sectionAnchors = map[string]int{}
-		m.summary = ""
-		m.summaryLoading = false
-		m.suggestionLoading = false
-		m.qaHistory = nil
-		m.questionLoading = false
-		m.viewport.SetYOffset(0)
-		m.selectionActive = false
-		m.pendingFocusAnchor = anchorSummary
-		m.clearSearch()
-		m.errorMessage = ""
-		m.infoMessage = fmt.Sprintf("Loaded %s. Press space to toggle note suggestions.", m.paper.Title)
-		m.refreshPersistedState()
-		m.markViewportDirty()
-		if m.config.LLM != nil {
-			var cmds []tea.Cmd
-			needsSpinner := false
-			if strings.TrimSpace(m.paper.FullText) != "" {
-				m.summaryLoading = true
-				cmds = append(cmds, summarizePaperCmd(m.config.LLM, m.paper))
-				needsSpinner = true
-			}
-			m.suggestionLoading = true
-			cmds = append(cmds, suggestNotesCmd(m.config.LLM, m.paper))
-			needsSpinner = true
-			if m.summaryLoading {
-				m.infoMessage = fmt.Sprintf("Loaded %s. Summarizing & drafting LLM notes…", m.paper.Title)
-			} else {
-				m.infoMessage = fmt.Sprintf("Loaded %s. Drafting LLM note suggestions…", m.paper.Title)
-			}
-			if needsSpinner {
-				cmds = append(cmds, m.spinner.Tick)
-				return m, tea.Batch(cmds...)
-			}
-		}
-		return m, nil
+		return m, m.handlePaperResult(msg)
 	case saveResultMsg:
-		m.stage = stageDisplay
-		if msg.err != nil {
-			m.errorMessage = msg.err.Error()
-			m.infoMessage = "Saving failed. Retry with s."
-			return m, nil
-		}
-		if msg.count == 0 {
-			m.infoMessage = "No notes selected. Toggle suggestions or add manual notes."
-			return m, nil
-		}
-		m.infoMessage = fmt.Sprintf("Saved %d note(s) to %s", msg.count, m.config.KnowledgeBasePath)
-		m.errorMessage = ""
-		m.selected = map[int]bool{}
-		m.persisted = map[int]bool{}
-		m.manualNotes = []notes.Note{}
-		m.refreshPersistedState()
-		m.markViewportDirty()
-		return m, nil
-	case summaryResultMsg:
-		if m.paper == nil || m.paper.ID != msg.paperID {
-			return m, nil
-		}
-		m.summaryLoading = false
-		if msg.err != nil {
-			m.errorMessage = fmt.Sprintf("summary error: %v", msg.err)
-			m.infoMessage = "Press a to retry summary generation."
-		} else {
-			m.summary = msg.summary
-			m.errorMessage = ""
-			m.infoMessage = "LLM summary ready."
-		}
-		m.markViewportDirty()
-		return m, nil
+		return m, m.handleSaveResult(msg)
+	case briefResultMsg:
+		return m, m.handleBriefResult(msg)
 	case questionResultMsg:
-		if m.paper == nil || m.paper.ID != msg.paperID {
-			return m, nil
-		}
-		m.questionLoading = false
-		if msg.index >= 0 && msg.index < len(m.qaHistory) {
-			entry := &m.qaHistory[msg.index]
-			entry.Pending = false
-			if msg.err != nil {
-				entry.Error = msg.err.Error()
-				entry.Answer = ""
-				m.errorMessage = entry.Error
-				m.infoMessage = "Question failed. Press q to retry."
-			} else {
-				entry.Answer = msg.answer
-				entry.Error = ""
-				m.errorMessage = ""
-				m.infoMessage = "Answer stored. Ask another with q."
-			}
-		}
-		m.markViewportDirty()
-		return m, nil
+		return m, m.handleQuestionResult(msg)
 	case suggestionResultMsg:
-		if m.paper == nil || m.paper.ID != msg.paperID {
-			return m, nil
-		}
-		m.suggestionLoading = false
-		if msg.err != nil {
-			m.errorMessage = fmt.Sprintf("suggestion error: %v", msg.err)
-			m.infoMessage = "LLM suggestions failed; showing heuristics."
-			m.markViewportDirty()
-			return m, nil
-		}
-		m.errorMessage = ""
-		m.infoMessage = "LLM suggestions ready."
-		m.suggestions = msg.suggestions
-		m.selected = map[int]bool{}
-		m.persisted = map[int]bool{}
-		m.refreshPersistedState()
-		m.markViewportDirty()
-		return m, nil
+		return m, m.handleSuggestionResult(msg)
 	case tea.WindowSizeMsg:
-		newWidth := msg.Width - viewportHorizontalPadding
-		if newWidth < minViewportWidth {
-			newWidth = minViewportWidth
+		m.layout.Update(msg.Width, msg.Height)
+		m.viewport.Width = m.layout.viewportWidth
+		m.viewport.Height = m.layout.viewportHeight
+		m.transcriptViewport.Width = m.layout.viewportWidth
+		m.transcriptViewport.Height = m.layout.transcriptHeight
+		composerWidth := m.layout.windowWidth - viewportHorizontalPadding
+		if composerWidth < minViewportWidth {
+			composerWidth = minViewportWidth
 		}
-		m.viewport.Width = newWidth
-		height := msg.Height - 6
-		if height < 5 {
-			height = 5
-		}
-		m.viewport.Height = height
+		m.composer.SetWidth(composerWidth)
+		m.composer.SetHeight(m.layout.composerHeight)
+		m.markTranscriptDirty()
 		m.markViewportDirty()
 		return m, nil
 	}
@@ -413,50 +305,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.stage {
 	case stageInput:
-		var cmd tea.Cmd
-		m.urlInput, cmd = m.urlInput.Update(key)
-		if key.Type == tea.KeyEnter {
-			url := strings.TrimSpace(m.urlInput.Value())
-			if url == "" {
-				m.errorMessage = "Enter an arXiv url or identifier."
-				return m, cmd
-			}
-			m.stage = stageLoading
-			m.errorMessage = ""
-			m.infoMessage = "Fetching metadata…"
-			return m, tea.Batch(cmd, m.spinner.Tick, fetchPaperCmd(url))
+		if cmd, handled := m.processComposerKey(key); handled {
+			return m, cmd
 		}
-		return m, cmd
+		return m, nil
 	case stageLoading:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(key)
 		return m, cmd
 	case stageDisplay:
 		return m.handleDisplayKey(key)
-	case stageNoteEntry:
-		var cmd tea.Cmd
-		m.noteInput, cmd = m.noteInput.Update(key)
-		if key.Type == tea.KeyEnter {
-			value := strings.TrimSpace(m.noteInput.Value())
-			m.noteInput.SetValue("")
-			m.stage = stageDisplay
-			m.mode = modeNormal
-			m.selectionActive = false
-			if value != "" {
-				m.manualNotes = append(m.manualNotes, notes.Note{
-					PaperID:    m.paper.ID,
-					PaperTitle: m.paper.Title,
-					Title:      trimmedTitle(value),
-					Body:       value,
-					Kind:       "manual",
-					CreatedAt:  time.Now(),
-				})
-				m.infoMessage = fmt.Sprintf("Manual note added (%d total).", len(m.manualNotes))
-				m.markViewportDirty()
-			}
-			return m, cmd
-		}
-		return m, cmd
 	case stageSearch:
 		var cmd tea.Cmd
 		m.searchInput, cmd = m.searchInput.Update(key)
@@ -467,106 +325,37 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, cmd
-	case stageQuestion:
-		var cmd tea.Cmd
-		m.questionInput, cmd = m.questionInput.Update(key)
-		if key.Type == tea.KeyEnter {
-			value := strings.TrimSpace(m.questionInput.Value())
-			m.questionInput.SetValue("")
-			m.stage = stageDisplay
-			if value == "" {
-				m.infoMessage = "Ask a question or press Esc to cancel."
-				return m, cmd
-			}
-			if m.config.LLM == nil || m.paper == nil {
-				m.infoMessage = "Configure OpenAI or Ollama support to ask questions."
-				return m, cmd
-			}
-			entry := qaExchange{
-				Question: value,
-				Pending:  true,
-				AskedAt:  time.Now(),
-			}
-			m.qaHistory = append(m.qaHistory, entry)
-			m.questionLoading = true
-			m.infoMessage = "Answering question via LLM…"
-			m.markViewportDirty()
-			idx := len(m.qaHistory) - 1
-			return m, tea.Batch(cmd, m.spinner.Tick, questionAnswerCmd(idx, m.config.LLM, m.paper, value))
-		}
-		return m, cmd
 	case stageSaving:
 		return m, nil
+	case stagePalette:
+		return m.handlePaletteKey(key)
 	default:
 		return m, nil
 	}
 }
 
 func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if cmd, handled := m.processComposerKey(key); handled {
+		return m, cmd
+	}
 	handled := true
 	switch key.String() {
 	case "up", "k":
 		m.moveCursor(-1)
 	case "down", "j":
 		m.moveCursor(1)
-	case " ":
-		if idx, ok := m.suggestionAtCursor(); ok {
-			if m.persisted[idx] {
-				m.infoMessage = "Suggestion already saved; add a manual note for new thoughts."
-			} else {
-				m.selected[idx] = !m.selected[idx]
-				m.markViewportDirty()
-				m.refreshViewportIfDirty()
-			}
-		} else {
-			m.infoMessage = "Move to a suggestion line to toggle selection."
-		}
 	case "v":
 		m.toggleHighlightMode()
 	case "i":
 		return m.enterInsertModeFromCursor()
 	case "a":
-		if m.paper != nil {
-			if m.config.LLM == nil {
-				m.infoMessage = "Configure OpenAI or Ollama via flags to enable summaries."
-				return m, nil
-			}
-			if m.summaryLoading {
-				m.infoMessage = "Summary already running."
-				return m, nil
-			}
-			m.summary = ""
-			m.summaryLoading = true
-			m.infoMessage = "Generating LLM summary…"
-			m.markViewportDirty()
-			return m, tea.Batch(m.spinner.Tick, summarizePaperCmd(m.config.LLM, m.paper))
-		}
+		return m, m.actionSummarizeCmd()
 	case "q":
-		if m.paper != nil {
-			if m.config.LLM == nil {
-				m.infoMessage = "Configure OpenAI or Ollama to unlock questions."
-				return m, nil
-			}
-			m.stage = stageQuestion
-			m.questionInput.Placeholder = "Ask about the loaded PDF…"
-			m.questionInput.SetValue("")
-			m.questionInput.Focus()
-			return m, nil
-		}
+		return m, m.actionAskQuestionCmd()
 	case "m":
-		if m.paper != nil {
-			m.startNoteEntry("")
-			m.infoMessage = "Insert mode active. Press Enter to store the note."
-			return m, nil
-		}
+		return m, m.actionManualNoteCmd()
 	case "/":
-		if m.paper != nil {
-			m.stage = stageSearch
-			m.searchInput.Placeholder = "Search within the current paper…"
-			m.searchInput.SetValue(m.searchQuery)
-			m.searchInput.Focus()
-			return m, nil
-		}
+		return m, m.actionSearchCmd()
 	case "n":
 		m.advanceSearch(1)
 	case "N":
@@ -580,41 +369,11 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "[":
 		m.jumpToRelativeSection(-1)
 	case "r":
-		m.stage = stageInput
-		m.paper = nil
-		m.cursorLine = 0
-		m.guide = nil
-		m.suggestions = nil
-		m.manualNotes = nil
-		m.persistedNotes = nil
-		m.selected = map[int]bool{}
-		m.persisted = map[int]bool{}
-		m.viewport.SetContent("")
-		m.suggestionLines = map[int]int{}
-		m.sectionAnchors = map[string]int{}
-		m.suggestionLoading = false
-		m.pendingFocusAnchor = ""
-		m.clearSearch()
-		m.infoMessage = "Ready for another paper."
-		return m, nil
+		return m, m.actionLoadNewCmd()
 	case "s":
-		notesToSave := m.collectSelectedNotes()
-		if len(notesToSave) == 0 {
-			m.infoMessage = "No notes selected. Toggle suggestions or add manual notes before saving."
-			return m, nil
-		}
-		m.stage = stageSaving
-		m.infoMessage = "Persisting notes…"
-		return m, tea.Batch(m.spinner.Tick, saveNotesCmd(m.config.KnowledgeBasePath, notesToSave))
+		return m, m.actionSaveCmd()
 	case "?":
-		m.helpVisible = !m.helpVisible
-		if m.helpVisible {
-			m.infoMessage = "Help overlay open. Press ? to hide."
-		} else {
-			m.infoMessage = "Help overlay hidden."
-		}
-		m.markViewportDirty()
-		return m, nil
+		return m, m.actionToggleHelpCmd()
 	default:
 		handled = false
 	}
@@ -624,6 +383,53 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(key)
 	return m, cmd
+}
+
+func (m *model) handlePaletteKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.Type {
+	case tea.KeyEnter:
+		if len(m.paletteMatches) == 0 {
+			return m, nil
+		}
+		cmd := m.runCommand(m.paletteMatches[m.paletteCursor].id)
+		m.closeCommandPalette()
+		return m, cmd
+	case tea.KeyUp, tea.KeyCtrlP:
+		if len(m.paletteMatches) > 0 && m.paletteCursor > 0 {
+			m.paletteCursor--
+			m.markViewportDirty()
+		}
+		return m, nil
+	case tea.KeyDown, tea.KeyCtrlN:
+		if len(m.paletteMatches) > 0 && m.paletteCursor < len(m.paletteMatches)-1 {
+			m.paletteCursor++
+			m.markViewportDirty()
+		}
+		return m, nil
+	}
+	var inputCmd tea.Cmd
+	m.paletteInput, inputCmd = m.paletteInput.Update(key)
+	m.refreshPaletteMatches()
+	return m, inputCmd
+}
+
+func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
+	if !m.composer.Focused() {
+		return nil, false
+	}
+	switch key.Type {
+	case tea.KeyCtrlC:
+		return tea.Quit, true
+	case tea.KeyEsc:
+		m.cancelComposerEntry()
+		return nil, true
+	}
+	if isCtrlEnter(key) || (key.Type == tea.KeyEnter && m.composerAcceptsPlainEnter()) {
+		return m.submitComposer(), true
+	}
+	var cmd tea.Cmd
+	m.composer, cmd = m.composer.Update(key)
+	return cmd, true
 }
 
 func (m *model) collectSelectedNotes() []notes.Note {
@@ -640,314 +446,6 @@ func (m *model) collectSelectedNotes() []notes.Note {
 	return result
 }
 
-func (m *model) View() string {
-	switch m.stage {
-	case stageInput:
-		return m.viewInput()
-	case stageLoading:
-		return m.viewLoading()
-	case stageDisplay:
-		return m.viewDisplay()
-	case stageNoteEntry:
-		return m.viewNoteEntry()
-	case stageSearch:
-		return m.viewSearch()
-	case stageQuestion:
-		return m.viewQuestion()
-	case stageSaving:
-		return m.viewSaving()
-	default:
-		return ""
-	}
-}
-
-func (m *model) viewInput() string {
-	var sections []string
-	sections = append(sections, m.heroView())
-
-	form := strings.Builder{}
-	form.WriteString(sectionHeaderStyle.Render("Paste an arXiv URL or identifier"))
-	form.WriteRune('\n')
-	form.WriteString(m.urlInput.View())
-	form.WriteRune('\n')
-	form.WriteString(helperStyle.Render("Press Enter to fetch the paper metadata."))
-	form.WriteRune('\n')
-	form.WriteString(helperStyle.Render(m.infoMessage))
-	if m.errorMessage != "" {
-		form.WriteRune('\n')
-		form.WriteString(errorStyle.Render(m.errorMessage))
-	}
-	sections = append(sections, form.String())
-	return strings.Join(sections, "\n\n")
-}
-
-func (m *model) viewLoading() string {
-	body := fmt.Sprintf("%s Fetching paper metadata…", m.spinner.View())
-	return m.frameWithHero(body)
-}
-
-func (m *model) viewDisplay() string {
-	if m.paper == nil {
-		return m.viewInput()
-	}
-	m.refreshViewportIfDirty()
-	parts := []string{m.heroView()}
-	if meter := m.sessionMeterView(); meter != "" {
-		parts = append(parts, meter)
-	}
-	parts = append(parts, m.viewport.View())
-	if status := m.searchStatusLine(); status != "" {
-		parts = append(parts, helperStyle.Render(status))
-	}
-	if m.errorMessage != "" {
-		parts = append(parts, errorStyle.Render(m.errorMessage))
-	}
-	if m.infoMessage != "" {
-		parts = append(parts, helperStyle.Render(m.infoMessage))
-	}
-	if legend := m.keyLegendView(); legend != "" {
-		parts = append(parts, legend)
-	}
-	if m.helpVisible {
-		parts = append(parts, m.helpView())
-	}
-	return joinNonEmpty(parts)
-}
-
-func (m *model) viewNoteEntry() string {
-	b := strings.Builder{}
-	b.WriteString(sectionHeaderStyle.Render("Add Manual Note"))
-	b.WriteRune('\n')
-	b.WriteString(m.noteInput.View())
-	b.WriteRune('\n')
-	b.WriteString(helperStyle.Render("Press Enter to store note, Esc to cancel."))
-	return m.frameWithHero(b.String())
-}
-
-func (m *model) viewSaving() string {
-	body := fmt.Sprintf("%s Saving notes to %s…", m.spinner.View(), m.config.KnowledgeBasePath)
-	return m.frameWithHero(body)
-}
-
-func (m *model) viewSearch() string {
-	var b strings.Builder
-	b.WriteString(sectionHeaderStyle.Render("Search Current Session"))
-	b.WriteRune('\n')
-	b.WriteString(m.searchInput.View())
-	b.WriteRune('\n')
-	b.WriteString(helperStyle.Render("Press Enter to apply search, Esc to cancel."))
-	return m.frameWithHero(b.String())
-}
-
-func (m *model) viewQuestion() string {
-	var b strings.Builder
-	b.WriteString(sectionHeaderStyle.Render("Ask the Paper"))
-	b.WriteRune('\n')
-	b.WriteString(m.questionInput.View())
-	b.WriteRune('\n')
-	if m.config.LLM == nil {
-		b.WriteString(errorStyle.Render("Configure OpenAI or Ollama support to ask questions."))
-	} else {
-		b.WriteString(helperStyle.Render("Press Enter to submit, Esc to cancel."))
-	}
-	return m.frameWithHero(b.String())
-}
-
-func (m *model) heroView() string {
-	logo := renderLogo()
-	if m.paper == nil {
-		return lipgloss.JoinVertical(
-			lipgloss.Left,
-			logo,
-			taglineStyle.Render(heroTagline),
-		)
-	}
-
-	title := heroTitleStyle.Render(wordwrap.String(m.paper.Title, 48))
-	meta := []string{helperStyle.Render(fmt.Sprintf("arXiv: %s", m.paper.ID))}
-	if len(m.paper.Authors) > 0 {
-		meta = append(meta, helperStyle.Render("Authors: "+shortenList(m.paper.Authors, 3)))
-	}
-	if len(m.paper.Subjects) > 0 {
-		meta = append(meta, helperStyle.Render("Subjects: "+shortenList(m.paper.Subjects, 3)))
-	}
-	content := strings.Join(append([]string{title}, meta...), "\n")
-	summary := heroBoxStyle.Render(content)
-	panel := lipgloss.JoinHorizontal(lipgloss.Top, logo, heroSummaryStyle.Render(summary))
-	return lipgloss.JoinVertical(lipgloss.Left, panel, taglineStyle.Render(heroTagline))
-}
-
-func (m *model) frameWithHero(body string) string {
-	return joinNonEmpty([]string{m.heroView(), body})
-}
-
-func joinNonEmpty(parts []string) string {
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		filtered = append(filtered, part)
-	}
-	return strings.Join(filtered, "\n\n")
-}
-
-func (m *model) modeLabel() string {
-	switch m.mode {
-	case modeInsert:
-		return "INSERT"
-	case modeHighlight:
-		return "HIGHLIGHT"
-	default:
-		return "NORMAL"
-	}
-}
-
-func (m *model) sessionMeterView() string {
-	stats := []string{
-		fmt.Sprintf("Mode %s", m.modeLabel()),
-		fmt.Sprintf("Suggestions %d", len(m.suggestions)),
-		fmt.Sprintf("Selected %d", m.selectedCount()),
-		fmt.Sprintf("Manual %d", len(m.manualNotes)),
-		fmt.Sprintf("Saved %d", len(m.persistedNotes)),
-	}
-	if m.config.LLM != nil {
-		stats = append(stats, fmt.Sprintf("Q&A %d", len(m.qaHistory)))
-		switch {
-		case m.summaryLoading || m.questionLoading:
-			stats = append(stats, "LLM working…")
-		case m.summary != "":
-			stats = append(stats, "LLM summary ready")
-		default:
-			stats = append(stats, "LLM idle")
-		}
-	}
-	return statusBarStyle.Render(strings.Join(stats, "  •  "))
-}
-
-type keyHint struct {
-	Key         string
-	Description string
-}
-
-func (m *model) keyLegendView() string {
-	hints := []keyHint{
-		{"↑/↓", "Move line cursor"},
-		{"v", "Toggle highlight mode"},
-		{"i", "Insert note / capture selection"},
-		{"space", "Toggle suggestion"},
-		{"[/]", "Prev/next section"},
-		{"m", "Manual note"},
-		{"a", "Regenerate summary"},
-		{"q", "Ask question"},
-		{"/", "Search"},
-		{"n/N", "Next match"},
-		{"g/G", "Top or bottom"},
-		{"s", "Save notes"},
-		{"?", "Toggle help"},
-		{"r", "Load new URL"},
-	}
-	rows := []string{sectionHeaderStyle.Render("Navigation Cheatsheet")}
-	const columns = 3
-	for i := 0; i < len(hints); i += columns {
-		end := i + columns
-		if end > len(hints) {
-			end = len(hints)
-		}
-		var cells []string
-		for _, hint := range hints[i:end] {
-			key := keyStyle.Render(hint.Key)
-			desc := keyDescStyle.Render(" " + hint.Description)
-			cells = append(cells, lipgloss.JoinHorizontal(lipgloss.Top, key, desc))
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cells...))
-	}
-	return legendBoxStyle.Render(strings.Join(rows, "\n"))
-}
-
-func (m *model) helpView() string {
-	lines := []string{
-		sectionHeaderStyle.Render("Command Palette"),
-		helperStyle.Render("• space toggles the suggestion that shares the highlighted line; ✓ items already live in your zettelkasten."),
-		helperStyle.Render("• press v to enter highlight mode, move to expand the selection, then press i to draft a note you can edit before saving."),
-		helperStyle.Render("• use [ and ] to jump to the previous or next section, and g / G to fly to the top or bottom."),
-		helperStyle.Render("• / opens search, n / N cycles matches, and Esc exits overlays."),
-		helperStyle.Render("• press a to regenerate the LLM summary and q to ask questions once OpenAI or Ollama is configured."),
-		helperStyle.Render("• press i or m for manual notes, s to persist, r to paste a new URL, Ctrl+C to quit."),
-	}
-	return helpBoxStyle.Render(strings.Join(lines, "\n"))
-}
-
-func renderLogo() string {
-	if len(logoArtLines) == 0 {
-		return ""
-	}
-	width := 0
-	lineRunes := make([][]rune, len(logoArtLines))
-	for i, line := range logoArtLines {
-		runes := []rune(line)
-		lineRunes[i] = runes
-		if len(runes) > width {
-			width = len(runes)
-		}
-	}
-	width += 1 // allow horizontal shadow shift
-	height := len(logoArtLines) + 1
-
-	type cell struct {
-		r     rune
-		style lipgloss.Style
-	}
-
-	grid := make([][]cell, height)
-	for i := range grid {
-		grid[i] = make([]cell, width)
-	}
-
-	// draw shadow first (offset down/right)
-	for y, runes := range lineRunes {
-		for x, r := range runes {
-			if r == ' ' {
-				continue
-			}
-			if y+1 < height && x+1 < width {
-				grid[y+1][x+1] = cell{r: r, style: logoShadowStyle}
-			}
-		}
-	}
-
-	// draw face on top
-	for y, runes := range lineRunes {
-		for x, r := range runes {
-			if r == ' ' {
-				continue
-			}
-			grid[y][x] = cell{r: r, style: logoFaceStyle}
-		}
-	}
-
-	lines := make([]string, height)
-	for y, row := range grid {
-		var b strings.Builder
-		for _, c := range row {
-			if c.r == 0 {
-				b.WriteRune(' ')
-				continue
-			}
-			b.WriteString(c.style.Render(string(c.r)))
-		}
-		lines[y] = b.String()
-	}
-	return logoContainerStyle.Render(strings.Join(lines, "\n"))
-}
-
-func shortenList(items []string, limit int) string {
-	if len(items) <= limit {
-		return strings.Join(items, ", ")
-	}
-	return fmt.Sprintf("%s…", strings.Join(items[:limit], ", "))
-}
-
 func (m *model) selectedCount() int {
 	count := 0
 	for idx, selected := range m.selected {
@@ -956,14 +454,6 @@ func (m *model) selectedCount() int {
 		}
 	}
 	return count
-}
-
-func indentMultiline(text, prefix string) string {
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		lines[i] = prefix + line
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (m *model) refreshPersistedState() {
@@ -1009,6 +499,16 @@ func (m *model) markViewportDirty() {
 func (m *model) refreshViewportIfDirty() {
 	if m.viewportDirty {
 		m.refreshViewport()
+	}
+}
+
+func (m *model) markTranscriptDirty() {
+	m.transcriptViewportDirty = true
+}
+
+func (m *model) refreshTranscriptIfDirty() {
+	if m.transcriptViewportDirty {
+		m.refreshTranscript()
 	}
 }
 
@@ -1085,174 +585,30 @@ func (m *model) refreshViewport() {
 	}
 }
 
-func (m *model) buildDisplayContent() displayView {
-	cb := &contentBuilder{}
-	anchors := map[string]int{}
-	baseWrap := m.wrapWidth(0)
-	bulletWrap := m.wrapWidth(4)
-	indentWrap := m.wrapWidth(6)
-	reasonWrap := m.wrapWidth(10)
-
-	cb.WriteString(titleStyle.Render(m.paper.Title))
-	cb.WriteRune('\n')
-	if len(m.paper.Authors) > 0 {
-		cb.WriteString(subtitleStyle.Render(strings.Join(m.paper.Authors, ", ")))
-		cb.WriteRune('\n')
+func (m *model) refreshTranscript() {
+	m.transcriptViewportDirty = false
+	wrap := m.layout.viewportWidth - 4
+	if wrap < 20 {
+		wrap = 20
 	}
-	if len(m.paper.Subjects) > 0 {
-		cb.WriteString(subjectStyle.Render("Subjects: " + strings.Join(m.paper.Subjects, ", ")))
-		cb.WriteRune('\n')
+	var b strings.Builder
+	for _, entry := range m.transcriptEntries {
+		header := fmt.Sprintf("[%s] %s", entry.Timestamp.Format("15:04:05"), entry.Kind)
+		b.WriteString(helperStyle.Render(header))
+		b.WriteRune('\n')
+		b.WriteString(wordwrap.String(entry.Content, wrap))
+		b.WriteRune('\n')
+		b.WriteRune('\n')
 	}
-
-	cb.WriteRune('\n')
-	anchors[anchorContributions] = cb.Line()
-	cb.WriteString(sectionHeaderStyle.Render("Key Contributions"))
-	cb.WriteRune('\n')
-	for _, c := range m.paper.KeyContributions {
-		cb.WriteString(" • ")
-		cb.WriteString(wordwrap.String(c, bulletWrap))
-		cb.WriteRune('\n')
-	}
-
-	cb.WriteRune('\n')
-	anchors[anchorGuide] = cb.Line()
-	cb.WriteString(sectionHeaderStyle.Render("Three-Pass Reading Plan"))
-	cb.WriteRune('\n')
-	for i, step := range m.guide {
-		cb.WriteString(fmt.Sprintf("%d. %s\n", i+1, step.Title))
-		cb.WriteString("   ")
-		cb.WriteString(wordwrap.String(step.Description, bulletWrap))
-		cb.WriteRune('\n')
-	}
-
-	cb.WriteRune('\n')
-	anchors[anchorSummary] = cb.Line()
-	cb.WriteString(sectionHeaderStyle.Render("LLM Summary (press a to refresh)"))
-	cb.WriteRune('\n')
-	switch {
-	case m.config.LLM == nil:
-		cb.WriteString(helperStyle.Render("Launch PaperScout with --llm-provider openai|ollama to enable summaries and Q&A."))
-		cb.WriteRune('\n')
-	case m.summaryLoading:
-		cb.WriteString(helperStyle.Render(fmt.Sprintf("%s Summarizing the parsed PDF…", m.spinner.View())))
-		cb.WriteRune('\n')
-	case strings.TrimSpace(m.summary) != "":
-		cb.WriteString(wordwrap.String(m.summary, baseWrap))
-		cb.WriteRune('\n')
-	default:
-		cb.WriteString(helperStyle.Render("Summary unavailable. Press a to generate one using the parsed PDF."))
-		cb.WriteRune('\n')
-	}
-
-	cb.WriteRune('\n')
-	anchors[anchorSuggestions] = cb.Line()
-	cb.WriteString(sectionHeaderStyle.Render("Suggested Notes (space to toggle, m to add manual)"))
-	cb.WriteRune('\n')
-	suggestionLines := make(map[int]int, len(m.suggestions))
-	if m.suggestionLoading {
-		cb.WriteString(helperStyle.Render(fmt.Sprintf("%s Generating LLM note ideas…", m.spinner.View())))
-		cb.WriteRune('\n')
-	}
-	if len(m.suggestions) == 0 {
-		if !m.suggestionLoading {
-			cb.WriteString(helperStyle.Render("No automatic suggestions. Use m to add your own notes."))
-			cb.WriteRune('\n')
+	content := strings.TrimSpace(b.String())
+	m.transcriptViewport.SetContent(content)
+	lines := splitLinesPreserve(content)
+	if len(lines) > m.transcriptViewport.Height {
+		offset := len(lines) - m.transcriptViewport.Height
+		if offset < 0 {
+			offset = 0
 		}
-	} else {
-		for idx, suggestion := range m.suggestions {
-			lineNumber := cb.Line()
-			cursor := " "
-			if m.cursorLine == lineNumber {
-				cursor = ">"
-			}
-
-			check := " "
-			switch {
-			case m.persisted[idx]:
-				check = "✓"
-			case m.selected[idx]:
-				check = "x"
-			}
-			suggestionLines[idx] = lineNumber
-			row := fmt.Sprintf(" %s [%s] %s", cursor, check, suggestion.Title)
-			if m.persisted[idx] {
-				row = persistedSuggestionStyle.Render(row)
-			}
-			cb.WriteString(row)
-			cb.WriteRune('\n')
-
-			body := indentMultiline(wordwrap.String(suggestion.Body, indentWrap), "     ")
-			if m.persisted[idx] {
-				body = persistedSuggestionStyle.Render(body)
-			}
-			cb.WriteString(body)
-			cb.WriteRune('\n')
-
-			if suggestion.Reason != "" {
-				reason := indentMultiline(wordwrap.String(suggestion.Reason, reasonWrap), "     ⮑ ")
-				cb.WriteString(helperStyle.Render(reason))
-				cb.WriteRune('\n')
-			}
-			if m.persisted[idx] {
-				cb.WriteString(helperStyle.Render("     ✓ Saved in knowledge base"))
-				cb.WriteRune('\n')
-			}
-		}
-	}
-
-	if len(m.persistedNotes) > 0 {
-		cb.WriteRune('\n')
-		anchors[anchorSaved] = cb.Line()
-		cb.WriteString(sectionHeaderStyle.Render("Saved Notes"))
-		cb.WriteRune('\n')
-		for i, note := range m.persistedNotes {
-			cb.WriteString(fmt.Sprintf(" %d) %s (%s)\n", i+1, note.Title, note.Kind))
-			cb.WriteString(indentMultiline(wordwrap.String(note.Body, indentWrap), "     "))
-			cb.WriteRune('\n')
-		}
-	}
-
-	if len(m.manualNotes) > 0 {
-		cb.WriteRune('\n')
-		anchors[anchorManual] = cb.Line()
-		cb.WriteString(sectionHeaderStyle.Render("Manual Notes"))
-		cb.WriteRune('\n')
-		for i, note := range m.manualNotes {
-			cb.WriteString(fmt.Sprintf(" %d) %s\n", i+1, note.Title))
-			cb.WriteString(indentMultiline(wordwrap.String(note.Body, indentWrap), "     "))
-			cb.WriteRune('\n')
-		}
-	}
-
-	if m.config.LLM != nil {
-		cb.WriteRune('\n')
-		anchors[anchorQA] = cb.Line()
-		cb.WriteString(sectionHeaderStyle.Render("Questions & Answers (press q to ask)"))
-		cb.WriteRune('\n')
-		if len(m.qaHistory) == 0 {
-			cb.WriteString(helperStyle.Render("Use q to ask about the PDF text. Answers will cite the parsed content."))
-			cb.WriteRune('\n')
-		} else {
-			for idx, exchange := range m.qaHistory {
-				cb.WriteString(fmt.Sprintf(" %d) Q: %s\n", idx+1, wordwrap.String(exchange.Question, indentWrap)))
-				switch {
-				case exchange.Pending:
-					cb.WriteString(helperStyle.Render(fmt.Sprintf("     %s Awaiting response…", m.spinner.View())))
-				case exchange.Error != "":
-					cb.WriteString(errorStyle.Render("     " + exchange.Error))
-				default:
-					cb.WriteString("     A: ")
-					cb.WriteString(wordwrap.String(exchange.Answer, indentWrap))
-				}
-				cb.WriteRune('\n')
-			}
-		}
-	}
-
-	return displayView{
-		content:         cb.String(),
-		suggestionLines: suggestionLines,
-		anchors:         anchors,
+		m.transcriptViewport.SetYOffset(offset)
 	}
 }
 
@@ -1372,20 +728,142 @@ func (m *model) enterInsertModeFromCursor() (tea.Model, tea.Cmd) {
 	}
 	m.startNoteEntry(prefill)
 	if prefill != "" {
-		m.infoMessage = "Editing highlighted selection. Press Enter to store the note."
+		m.infoMessage = "Composer prefilled from highlight. Press Ctrl+Enter to store the note."
 	} else {
-		m.infoMessage = "Insert mode active. Press Enter to store the note."
+		m.infoMessage = "Composer active. Press Ctrl+Enter to store the note."
 	}
 	return m, nil
 }
 
 func (m *model) startNoteEntry(prefill string) {
-	m.stage = stageNoteEntry
 	m.mode = modeInsert
-	m.noteInput.Placeholder = "Write an atomic note and press Enter…"
-	m.noteInput.SetValue(prefill)
-	m.noteInput.Focus()
 	m.selectionActive = false
+	m.composer.SetValue(prefill)
+	m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
+}
+
+func (m *model) setComposerMode(mode composerMode, placeholder string, focus bool) {
+	m.composerMode = mode
+	if placeholder != "" {
+		m.composer.Placeholder = placeholder
+	}
+	if focus {
+		m.composer.Focus()
+	} else {
+		m.composer.Blur()
+	}
+}
+
+func (m *model) cancelComposerEntry() {
+	switch m.composerMode {
+	case composerModeURL:
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+		m.infoMessage = "Composer cleared."
+	case composerModeNote:
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
+		if m.mode == modeInsert {
+			m.mode = modeNormal
+			m.selectionActive = false
+		}
+		m.infoMessage = "Manual note canceled."
+	case composerModeQuestion:
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
+		m.infoMessage = "Question canceled."
+	default:
+		m.blurComposer()
+	}
+}
+
+func (m *model) submitComposer() tea.Cmd {
+	value := strings.TrimSpace(m.composer.Value())
+	if value == "" {
+		m.infoMessage = "Type something before submitting."
+		return nil
+	}
+	switch m.composerMode {
+	case composerModeURL:
+		m.stage = stageLoading
+		m.errorMessage = ""
+		m.infoMessage = "Fetching metadata…"
+		m.appendTranscript("fetch", fmt.Sprintf("Fetching %s", value))
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeURL, composerURLPlaceholder, false)
+		return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindFetch, fetchPaperJob(value)))
+	case composerModeNote:
+		if m.paper == nil {
+			m.infoMessage = "Load a paper before drafting notes."
+			return nil
+		}
+		m.manualNotes = append(m.manualNotes, notes.Note{
+			PaperID:    m.paper.ID,
+			PaperTitle: m.paper.Title,
+			Title:      trimmedTitle(value),
+			Body:       value,
+			Kind:       "manual",
+			CreatedAt:  time.Now(),
+		})
+		m.infoMessage = fmt.Sprintf("Manual note added (%d total).", len(m.manualNotes))
+		m.markViewportDirty()
+		m.appendTranscript("note", previewText(value, transcriptPreviewLimit))
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
+		return nil
+	case composerModeQuestion:
+		if m.paper == nil {
+			m.infoMessage = "Load a paper before asking questions."
+			return nil
+		}
+		if m.config.LLM == nil {
+			m.infoMessage = "Configure OpenAI or Ollama to unlock questions."
+			return nil
+		}
+		entry := qaExchange{
+			Question: value,
+			Pending:  true,
+			AskedAt:  time.Now(),
+		}
+		m.qaHistory = append(m.qaHistory, entry)
+		m.appendTranscript("question", value)
+		m.questionLoading = true
+		m.infoMessage = "Answering question via LLM…"
+		m.markViewportDirty()
+		idx := len(m.qaHistory) - 1
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
+		return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindQuestion, questionAnswerJob(idx, m.config.LLM, m.paper, value)))
+	default:
+		m.infoMessage = "Composer inactive. Press m or q to begin."
+		return nil
+	}
+}
+
+func (m *model) blurComposer() {
+	m.composer.Blur()
+	m.composerMode = composerModeIdle
+	if m.mode == modeInsert {
+		m.mode = modeNormal
+	}
+}
+
+func isCtrlEnter(key tea.KeyMsg) bool {
+	switch key.String() {
+	case "ctrl+enter", "ctrl+m", "ctrl+j":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *model) composerAcceptsPlainEnter() bool {
+	switch m.composerMode {
+	case composerModeURL, composerModeQuestion:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *model) jumpToRelativeSection(delta int) {
@@ -1510,10 +988,12 @@ func (m *model) jumpToSection(anchor string) {
 	line, ok := m.sectionAnchors[anchor]
 	if !ok {
 		switch anchor {
-		case anchorManual:
-			m.infoMessage = "No manual notes yet."
-		case anchorSaved:
-			m.infoMessage = "No saved notes yet."
+		case anchorSummary:
+			m.infoMessage = "Summary section unavailable."
+		case anchorTechnical:
+			m.infoMessage = "Technical section unavailable."
+		case anchorDeepDive:
+			m.infoMessage = "Deep-dive section unavailable."
 		default:
 			m.infoMessage = "Section unavailable."
 		}
@@ -1530,23 +1010,6 @@ func (m *model) jumpToSection(anchor string) {
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
 	m.infoMessage = fmt.Sprintf("Jumped to %s.", sectionLabel(anchor))
-}
-
-func sectionLabel(anchor string) string {
-	switch anchor {
-	case anchorContributions:
-		return "Key Contributions"
-	case anchorGuide:
-		return "Reading Plan"
-	case anchorSuggestions:
-		return "Suggestions"
-	case anchorSaved:
-		return "Saved Notes"
-	case anchorManual:
-		return "Manual Notes"
-	default:
-		return "section"
-	}
 }
 
 func (m *model) applySearch(query string) {
@@ -1599,6 +1062,452 @@ func (m *model) advanceSearch(delta int) {
 	m.refreshViewportIfDirty()
 }
 
+func (m *model) actionSummarizeCmd() tea.Cmd {
+	if m.paper == nil {
+		m.infoMessage = "Load a paper before summarizing."
+		return nil
+	}
+	if m.config.LLM == nil {
+		m.infoMessage = "Configure OpenAI or Ollama via flags to enable summaries."
+		return nil
+	}
+	if m.briefLoading {
+		m.infoMessage = "Reading brief already running."
+		return nil
+	}
+	m.brief = llm.ReadingBrief{}
+	m.briefLoading = true
+	m.infoMessage = "Generating LLM reading brief…"
+	m.markViewportDirty()
+	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindSummary, summarizePaperJob(m.config.LLM, m.paper)))
+}
+
+func (m *model) actionAskQuestionCmd() tea.Cmd {
+	if m.paper == nil {
+		m.infoMessage = "Load a paper before asking questions."
+		return nil
+	}
+	if m.config.LLM == nil {
+		m.infoMessage = "Configure OpenAI or Ollama to unlock questions."
+		return nil
+	}
+	m.composer.SetValue("")
+	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
+	m.infoMessage = "Composer ready. Press Enter to submit."
+	return nil
+}
+
+func (m *model) actionManualNoteCmd() tea.Cmd {
+	if m.paper == nil {
+		m.infoMessage = "Load a paper before drafting notes."
+		return nil
+	}
+	m.startNoteEntry("")
+	m.infoMessage = "Composer active. Press Ctrl+Enter to store the note."
+	return nil
+}
+
+func (m *model) actionSearchCmd() tea.Cmd {
+	if m.paper == nil {
+		m.infoMessage = "Load a paper before searching."
+		return nil
+	}
+	m.stage = stageSearch
+	m.searchInput.Placeholder = "Search within the current paper…"
+	m.searchInput.SetValue(m.searchQuery)
+	m.searchInput.Focus()
+	return nil
+}
+
+func (m *model) actionSaveCmd() tea.Cmd {
+	notesToSave := m.collectSelectedNotes()
+	if len(notesToSave) == 0 {
+		m.infoMessage = "No manual notes captured yet."
+		return nil
+	}
+	m.stage = stageSaving
+	target := m.config.KnowledgeBasePath
+	if strings.TrimSpace(target) == "" {
+		target = "zettelkasten.json"
+	}
+	m.infoMessage = fmt.Sprintf("Saving notes to %s…", target)
+	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindSave, saveNotesJob(m.config.KnowledgeBasePath, notesToSave)))
+}
+
+func (m *model) actionToggleHelpCmd() tea.Cmd {
+	m.helpVisible = !m.helpVisible
+	if m.helpVisible {
+		m.infoMessage = "Help overlay open. Press ? to hide."
+	} else {
+		m.infoMessage = "Help overlay hidden."
+	}
+	m.markViewportDirty()
+	return nil
+}
+
+func (m *model) actionLoadNewCmd() tea.Cmd {
+	m.stage = stageInput
+	m.paper = nil
+	m.cursorLine = 0
+	m.guide = nil
+	m.suggestions = nil
+	m.manualNotes = nil
+	m.persistedNotes = nil
+	m.selected = map[int]bool{}
+	m.persisted = map[int]bool{}
+	m.viewport.SetContent("")
+	m.suggestionLines = map[int]int{}
+	m.sectionAnchors = map[string]int{}
+	m.suggestionLoading = false
+	m.pendingFocusAnchor = ""
+	m.clearSearch()
+	m.infoMessage = "Ready for another paper."
+	m.markViewportDirty()
+	m.composer.SetValue("")
+	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+	m.mode = modeNormal
+	m.selectionActive = false
+	return nil
+}
+
+func (m *model) availableCommands() []uiCommand {
+	base := paletteCommands
+	result := make([]uiCommand, 0, len(base))
+	for _, cmd := range base {
+		if m.commandAvailable(cmd.id) {
+			result = append(result, cmd)
+		}
+	}
+	return result
+}
+
+func (m *model) commandAvailable(id actionID) bool {
+	switch id {
+	case actionSummarize:
+		return m.paper != nil && m.config.LLM != nil
+	case actionAskQuestion:
+		return m.paper != nil && m.config.LLM != nil
+	case actionManualNote:
+		return m.paper != nil
+	case actionSearch:
+		return m.paper != nil
+	case actionSaveNotes:
+		return len(m.collectSelectedNotes()) > 0
+	case actionToggleHelp:
+		return true
+	case actionLoadNew:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *model) runCommand(id actionID) tea.Cmd {
+	switch id {
+	case actionSummarize:
+		return m.actionSummarizeCmd()
+	case actionAskQuestion:
+		return m.actionAskQuestionCmd()
+	case actionManualNote:
+		return m.actionManualNoteCmd()
+	case actionSearch:
+		return m.actionSearchCmd()
+	case actionSaveNotes:
+		return m.actionSaveCmd()
+	case actionToggleHelp:
+		return m.actionToggleHelpCmd()
+	case actionLoadNew:
+		return m.actionLoadNewCmd()
+	default:
+		return nil
+	}
+}
+
+func (m *model) appendTranscript(kind, content string) {
+	entry := transcriptEntry{
+		Kind:      kind,
+		Content:   content,
+		Timestamp: time.Now(),
+	}
+	m.transcriptEntries = append(m.transcriptEntries, entry)
+	m.markTranscriptDirty()
+}
+
+func (m *model) openCommandPalette() {
+	m.paletteReturnStage = m.stage
+	m.stage = stagePalette
+	m.paletteInput.SetValue("")
+	m.paletteInput.Focus()
+	m.paletteCursor = 0
+	m.refreshPaletteMatches()
+}
+
+func (m *model) closeCommandPalette() {
+	target := m.paletteReturnStage
+	if target == stagePalette || target == 0 {
+		target = stageDisplay
+	}
+	m.stage = target
+	m.paletteInput.Blur()
+	m.paletteInput.SetValue("")
+	m.paletteMatches = nil
+	m.paletteCursor = 0
+}
+
+func (m *model) refreshPaletteMatches() {
+	filter := strings.ToLower(strings.TrimSpace(m.paletteInput.Value()))
+	commands := m.availableCommands()
+	if filter == "" {
+		m.paletteMatches = commands
+		if m.paletteCursor >= len(m.paletteMatches) {
+			m.paletteCursor = len(m.paletteMatches) - 1
+		}
+		if m.paletteCursor < 0 {
+			m.paletteCursor = 0
+		}
+		return
+	}
+	var matches []uiCommand
+	for _, cmd := range commands {
+		title := strings.ToLower(cmd.title)
+		desc := strings.ToLower(cmd.description)
+		if strings.Contains(title, filter) || strings.Contains(desc, filter) {
+			matches = append(matches, cmd)
+		}
+	}
+	m.paletteMatches = matches
+	if len(m.paletteMatches) == 0 {
+		m.paletteCursor = 0
+	} else if m.paletteCursor >= len(m.paletteMatches) {
+		m.paletteCursor = len(m.paletteMatches) - 1
+	}
+}
+
+func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
+	if msg.err != nil {
+		m.stage = stageInput
+		m.errorMessage = msg.err.Error()
+		m.infoMessage = "Try another arXiv identifier."
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+		m.appendTranscript("error", fmt.Sprintf("Load failed: %v", msg.err))
+		return nil
+	}
+	m.paper = msg.paper
+	m.guide = msg.guide
+	m.suggestions = nil
+	m.stage = stageDisplay
+	m.mode = modeNormal
+	m.cursorLine = 0
+	m.selected = map[int]bool{}
+	m.persisted = map[int]bool{}
+	m.manualNotes = []notes.Note{}
+	m.persistedNotes = nil
+	m.suggestionLines = map[int]int{}
+	m.sectionAnchors = map[string]int{}
+	m.brief = llm.ReadingBrief{}
+	m.briefLoading = false
+	m.suggestionLoading = false
+	m.qaHistory = nil
+	m.questionLoading = false
+	m.viewport.SetYOffset(0)
+	m.selectionActive = false
+	m.pendingFocusAnchor = anchorSummary
+	m.clearSearch()
+	m.errorMessage = ""
+	m.infoMessage = fmt.Sprintf("Loaded %s. Generating reading brief…", m.paper.Title)
+	m.refreshPersistedState()
+	m.markViewportDirty()
+	m.composer.SetValue("")
+	m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
+	m.appendTranscript("paper", fmt.Sprintf("Loaded %s", m.paper.Title))
+
+	if m.config.LLM == nil {
+		m.infoMessage = fmt.Sprintf("Loaded %s. Configure an LLM provider to see the reading brief.", m.paper.Title)
+		return nil
+	}
+	if strings.TrimSpace(m.paper.FullText) == "" {
+		m.infoMessage = fmt.Sprintf("Loaded %s. PDF text missing; skipping reading brief.", m.paper.Title)
+		return nil
+	}
+	m.briefLoading = true
+	m.infoMessage = fmt.Sprintf("Loaded %s. Building reading brief…", m.paper.Title)
+	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindSummary, summarizePaperJob(m.config.LLM, m.paper)))
+}
+
+func (m *model) handleSaveResult(msg saveResultMsg) tea.Cmd {
+	m.stage = stageDisplay
+	if msg.err != nil {
+		m.errorMessage = msg.err.Error()
+		m.infoMessage = "Saving failed. Retry with s."
+		m.appendTranscript("error", fmt.Sprintf("Save failed: %v", msg.err))
+		return nil
+	}
+	if msg.count == 0 {
+		m.infoMessage = "No manual notes captured yet."
+		return nil
+	}
+	m.infoMessage = fmt.Sprintf("Saved %d note(s) to %s", msg.count, m.config.KnowledgeBasePath)
+	m.errorMessage = ""
+	m.selected = map[int]bool{}
+	m.persisted = map[int]bool{}
+	m.manualNotes = []notes.Note{}
+	m.refreshPersistedState()
+	m.markViewportDirty()
+	m.appendTranscript("save", fmt.Sprintf("Saved %d note(s).", msg.count))
+	return nil
+}
+
+func (m *model) handleBriefResult(msg briefResultMsg) tea.Cmd {
+	if m.paper == nil || m.paper.ID != msg.paperID {
+		return nil
+	}
+	m.briefLoading = false
+	if msg.err != nil {
+		m.errorMessage = fmt.Sprintf("brief error: %v", msg.err)
+		m.infoMessage = "Press a to retry the reading brief."
+		m.appendTranscript("error", fmt.Sprintf("Brief failed: %v", msg.err))
+	} else {
+		m.brief = msg.brief
+		m.errorMessage = ""
+		m.infoMessage = "Reading brief ready."
+		m.appendTranscript("brief", strings.Join(msg.brief.Summary, " | "))
+	}
+	m.markViewportDirty()
+	return nil
+}
+
+func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
+	if m.paper == nil || m.paper.ID != msg.paperID {
+		return nil
+	}
+	m.questionLoading = false
+	if msg.index >= 0 && msg.index < len(m.qaHistory) {
+		entry := &m.qaHistory[msg.index]
+		entry.Pending = false
+		if msg.err != nil {
+			entry.Error = msg.err.Error()
+			entry.Answer = ""
+			m.errorMessage = entry.Error
+			m.infoMessage = "Question failed. Press q to retry."
+			m.appendTranscript("error", fmt.Sprintf("Question failed: %v", msg.err))
+		} else {
+			entry.Answer = msg.answer
+			entry.Error = ""
+			m.errorMessage = ""
+			m.infoMessage = "Answer stored. Ask another with q."
+			m.appendTranscript("answer", previewText(msg.answer, transcriptPreviewLimit))
+		}
+	}
+	m.markViewportDirty()
+	return nil
+}
+
+func (m *model) handleSuggestionResult(msg suggestionResultMsg) tea.Cmd {
+	if m.paper == nil || m.paper.ID != msg.paperID {
+		return nil
+	}
+	m.suggestionLoading = false
+	if msg.err != nil {
+		m.errorMessage = fmt.Sprintf("suggestion error: %v", msg.err)
+		m.infoMessage = "Note suggestions are unavailable in this view."
+		m.markViewportDirty()
+		m.appendTranscript("error", fmt.Sprintf("Suggestion failed: %v", msg.err))
+		return nil
+	}
+	m.errorMessage = ""
+	m.infoMessage = "Note suggestions are unavailable in this view."
+	m.suggestions = nil
+	m.selected = map[int]bool{}
+	m.persisted = map[int]bool{}
+	m.refreshPersistedState()
+	m.markViewportDirty()
+	return nil
+}
+
+func (m *model) handleJobPayload(payload tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := payload.(type) {
+	case paperResultMsg:
+		return m, m.handlePaperResult(msg)
+	case saveResultMsg:
+		return m, m.handleSaveResult(msg)
+	case briefResultMsg:
+		return m, m.handleBriefResult(msg)
+	case questionResultMsg:
+		return m, m.handleQuestionResult(msg)
+	case suggestionResultMsg:
+		return m, m.handleSuggestionResult(msg)
+	default:
+		return m, nil
+	}
+}
+
+func (m *model) recordJobSnapshot(snapshot jobSnapshot) {
+	if m.jobSnapshots == nil {
+		m.jobSnapshots = map[jobKind]jobSnapshot{}
+	}
+	m.jobSnapshots[snapshot.Kind] = snapshot
+}
+
+func (m *model) jobStatusBadges() []string {
+	if len(m.jobSnapshots) == 0 {
+		return nil
+	}
+	order := []jobKind{jobKindFetch, jobKindSummary, jobKindSuggest, jobKindSave, jobKindQuestion}
+	var badges []string
+	for _, kind := range order {
+		snapshot, ok := m.jobSnapshots[kind]
+		if !ok {
+			continue
+		}
+		switch snapshot.Status {
+		case jobStatusRunning:
+			elapsed := time.Since(snapshot.StartedAt)
+			badges = append(badges, fmt.Sprintf("%s ▶ %s", jobKindLabel(kind), humanDuration(elapsed)))
+		case jobStatusSucceeded:
+			badges = append(badges, fmt.Sprintf("%s ✓ %s", jobKindLabel(kind), humanDuration(snapshot.Duration)))
+		case jobStatusFailed:
+			label := fmt.Sprintf("%s ✗ %s", jobKindLabel(kind), humanDuration(snapshot.Duration))
+			if snapshot.Err != "" {
+				label = fmt.Sprintf("%s (%s)", label, snapshot.Err)
+			}
+			badges = append(badges, label)
+		}
+	}
+	return badges
+}
+
+func jobKindLabel(kind jobKind) string {
+	switch kind {
+	case jobKindFetch:
+		return "fetch"
+	case jobKindSummary:
+		return "brief"
+	case jobKindSuggest:
+		return "suggest"
+	case jobKindSave:
+		return "save"
+	case jobKindQuestion:
+		return "qa"
+	default:
+		return string(kind)
+	}
+}
+
+func humanDuration(d time.Duration) string {
+	if d >= time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	if d <= 0 {
+		return "0ms"
+	}
+	ms := d.Milliseconds()
+	if ms == 0 {
+		ms = 1
+	}
+	return fmt.Sprintf("%dms", ms)
+}
+
 func (m *model) scrollToCurrentMatch() {
 	if len(m.searchMatches) == 0 || m.searchMatchIdx < 0 || m.searchMatchIdx >= len(m.searchMatches) {
 		return
@@ -1622,52 +1531,6 @@ func (m *model) searchStatusLine() string {
 	return fmt.Sprintf("Search %q — match %d/%d", m.searchQuery, m.searchMatchIdx+1, len(m.searchMatches))
 }
 
-type displayView struct {
-	content         string
-	suggestionLines map[int]int
-	anchors         map[string]int
-}
-
-type contentBuilder struct {
-	builder strings.Builder
-	lines   int
-}
-
-func (cb *contentBuilder) WriteString(s string) {
-	cb.builder.WriteString(s)
-	cb.lines += strings.Count(s, "\n")
-}
-
-func (cb *contentBuilder) WriteRune(r rune) {
-	cb.builder.WriteRune(r)
-	if r == '\n' {
-		cb.lines++
-	}
-}
-
-func (cb *contentBuilder) String() string {
-	return cb.builder.String()
-}
-
-func (cb *contentBuilder) Line() int {
-	return cb.lines
-}
-
-func (m *model) wrapWidth(padding int) int {
-	width := m.viewport.Width
-	if width <= 0 {
-		width = 80
-	}
-	if padding < 0 {
-		padding = 0
-	}
-	available := width - padding
-	if available < 20 {
-		available = 20
-	}
-	return available
-}
-
 func (m *model) clampYOffset(offset int) int {
 	maxOffset := m.lineCount - m.viewport.Height
 	if m.viewport.Height <= 0 {
@@ -1683,204 +1546,6 @@ func (m *model) clampYOffset(offset int) int {
 		return maxOffset
 	}
 	return offset
-}
-
-func splitLinesPreserve(content string) []string {
-	if content == "" {
-		return []string{""}
-	}
-	return strings.Split(content, "\n")
-}
-
-type matchRange struct {
-	start int
-	end   int
-}
-
-func findMatches(content, query string) []matchRange {
-	lowerContent := strings.ToLower(content)
-	lowerQuery := strings.ToLower(query)
-	if lowerQuery == "" {
-		return nil
-	}
-	var matches []matchRange
-	searchIdx := 0
-	for {
-		idx := strings.Index(lowerContent[searchIdx:], lowerQuery)
-		if idx == -1 {
-			break
-		}
-		start := searchIdx + idx
-		end := start + len(lowerQuery)
-		matches = append(matches, matchRange{start: start, end: end})
-		searchIdx = end
-		if searchIdx >= len(content) {
-			break
-		}
-	}
-	return matches
-}
-
-func highlightMatches(content string, matches []matchRange, current int) string {
-	if len(matches) == 0 {
-		return content
-	}
-	var b strings.Builder
-	pos := 0
-	for idx, match := range matches {
-		if match.start > len(content) {
-			break
-		}
-		if match.start > pos {
-			b.WriteString(content[pos:match.start])
-		}
-		segmentEnd := match.end
-		if segmentEnd > len(content) {
-			segmentEnd = len(content)
-		}
-		segment := content[match.start:segmentEnd]
-		if idx == current {
-			b.WriteString(searchCurrentStyle.Render(segment))
-		} else {
-			b.WriteString(searchHighlightStyle.Render(segment))
-		}
-		pos = segmentEnd
-	}
-	if pos < len(content) {
-		b.WriteString(content[pos:])
-	}
-	return b.String()
-}
-
-func applyLineHighlights(content string, cursor int, selectionStart, selectionEnd int, hasSelection bool) string {
-	if content == "" {
-		return content
-	}
-	lines := strings.Split(content, "\n")
-	for idx, line := range lines {
-		inSelection := hasSelection && idx >= selectionStart && idx <= selectionEnd
-		switch {
-		case idx == cursor && inSelection:
-			lines[idx] = currentLineStyle.Render(line)
-		case idx == cursor:
-			lines[idx] = currentLineStyle.Render(line)
-		case inSelection:
-			lines[idx] = selectionLineStyle.Render(line)
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func lineNumberAtOffset(content string, offset int) int {
-	if offset <= 0 {
-		return 0
-	}
-	if offset > len(content) {
-		offset = len(content)
-	}
-	return strings.Count(content[:offset], "\n")
-}
-
-func fetchPaperCmd(url string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-		defer cancel()
-		paper, err := arxiv.FetchPaper(ctx, url)
-		if err != nil {
-			return paperResultMsg{err: err}
-		}
-		steps := guide.Build(guide.Metadata{Title: paper.Title, Authors: paper.Authors})
-		suggestions := notes.SuggestCandidates(paper.Title, paper.Abstract, paper.KeyContributions)
-		return paperResultMsg{
-			paper:       paper,
-			guide:       steps,
-			suggestions: suggestions,
-		}
-	}
-}
-
-func saveNotesCmd(path string, entries []notes.Note) tea.Cmd {
-	return func() tea.Msg {
-		if err := notes.Save(path, entries); err != nil {
-			return saveResultMsg{err: err}
-		}
-		return saveResultMsg{count: len(entries)}
-	}
-}
-
-func summarizePaperCmd(client llm.Client, paper *arxiv.Paper) tea.Cmd {
-	title := paper.Title
-	content := paper.FullText
-	paperID := paper.ID
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		summary, err := client.Summarize(ctx, title, content)
-		return summaryResultMsg{paperID: paperID, summary: summary, err: err}
-	}
-}
-
-func suggestNotesCmd(client llm.Client, paper *arxiv.Paper) tea.Cmd {
-	title := paper.Title
-	abstract := paper.Abstract
-	contributions := append([]string{}, paper.KeyContributions...)
-	content := paper.FullText
-	paperID := paper.ID
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		suggestions, err := client.SuggestNotes(ctx, title, abstract, contributions, content)
-		if err != nil {
-			return suggestionResultMsg{paperID: paperID, err: err}
-		}
-		return suggestionResultMsg{paperID: paperID, suggestions: mapSuggestedNotes(suggestions), err: nil}
-	}
-}
-
-func questionAnswerCmd(index int, client llm.Client, paper *arxiv.Paper, question string) tea.Cmd {
-	title := paper.Title
-	content := paper.FullText
-	paperID := paper.ID
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		answer, err := client.Answer(ctx, title, question, content)
-		return questionResultMsg{paperID: paperID, index: index, answer: answer, err: err}
-	}
-}
-
-func trimmedTitle(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) <= 60 {
-		return value
-	}
-	return fmt.Sprintf("%s…", strings.TrimSpace(value[:57]))
-}
-
-func candidateMatchesNotes(candidate notes.Candidate, saved []notes.Note) bool {
-	for _, note := range saved {
-		if note.Title == candidate.Title && note.Body == candidate.Body && note.Kind == candidate.Kind {
-			return true
-		}
-	}
-	return false
-}
-
-func mapSuggestedNotes(entries []llm.SuggestedNote) []notes.Candidate {
-	results := make([]notes.Candidate, 0, len(entries))
-	for _, suggestion := range entries {
-		kind := suggestion.Kind
-		if kind == "" {
-			kind = "llm"
-		}
-		results = append(results, notes.Candidate{
-			Title:  suggestion.Title,
-			Body:   suggestion.Body,
-			Kind:   kind,
-			Reason: suggestion.Reason,
-		})
-	}
-	return results
 }
 
 var (

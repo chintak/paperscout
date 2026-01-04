@@ -1,0 +1,10 @@
+[
+  {
+    "paperId": "2505.10960",
+    "paperTitle": "Relational Graph Transformer",
+    "title": "Temporal leakage handling question",
+    "body": "How does RelGT prevent future information leakage during training with temporal constraints? The tokenization's time component requires careful handling.",
+    "kind": "follow-up",
+    "createdAt": "2026-01-02T00:59:13.08175-08:00"
+  }
+]

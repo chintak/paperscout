@@ -19,7 +19,7 @@ go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json
 PaperScout now downloads the linked "View PDF" asset, parses it locally, and can summarize it or answer follow-up questions through either OpenAI or Ollama. Ollama is the default, so once you have `ollama serve` running you can simply start PaperScout and hit `a`/`q` for summaries or questions.
 
 - **OpenAI (hosted)** – set `OPENAI_API_KEY` (or pass `-openai-api-key`) and optionally `OPENAI_MODEL`/`OPENAI_BASE_URL`, then run `go run ./cmd/paperscout -llm-provider openai`.
-- **Ollama (local)** – run `ollama serve` with your preferred model, or override with `-llm-provider ollama -llm-model mistral` and `-llm-endpoint http://localhost:11434`.
+- **Ollama (local)** – run `ollama serve` after pulling `ministral-3:latest`, which PaperScout now selects by default. Override with your own model via `-llm-provider ollama -llm-model <name>` (or `OLLAMA_MODEL`) plus `-llm-endpoint http://localhost:11434` if your daemon runs elsewhere. Ministral 3 provides a 128K-token context window, which leaves plenty of headroom for long PDFs and follow-up questions without extra tuning.
 - **Auto switch** – pass `-llm-provider auto` if you want PaperScout to prefer OpenAI whenever a key is present and otherwise fall back to Ollama.
 
 You can still launch without any LLM; summaries and Q&A sections will show setup instructions instead of results.

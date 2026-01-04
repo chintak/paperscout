@@ -3,14 +3,18 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
 func TestOllamaClientSummarize(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/api/generate" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -25,8 +29,8 @@ func TestOllamaClientSummarize(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("failed to decode payload: %v", err)
 		}
-		if payload.Model != "qwen3-vl:8b" {
-			t.Fatalf("expected model qwen3-vl:8b, got %s", payload.Model)
+		if payload.Model != "ministral-3:latest" {
+			t.Fatalf("expected model ministral-3:latest, got %s", payload.Model)
 		}
 		if !strings.Contains(payload.Prompt, "Paper title: Cool Paper") {
 			t.Fatalf("prompt missing title: %s", payload.Prompt)
@@ -34,15 +38,17 @@ func TestOllamaClientSummarize(t *testing.T) {
 		if payload.Stream {
 			t.Fatal("expected streaming to be disabled")
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"response":"Bullet 1","done":true}`))
-	}))
-	defer server.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":"Bullet 1","done":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
 	client := &ollamaClient{
-		host:   server.URL,
-		model:  "qwen3-vl:8b",
-		client: server.Client(),
+		host:   "http://example.com",
+		model:  "ministral-3:latest",
+		client: &http.Client{Transport: rt},
 	}
 
 	result, err := client.Summarize(context.Background(), "Cool Paper", "This is the PDF content.")
@@ -55,7 +61,7 @@ func TestOllamaClientSummarize(t *testing.T) {
 }
 
 func TestOllamaClientAnswer(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		var payload struct {
 			Model  string `json:"model"`
 			Prompt string `json:"prompt"`
@@ -63,21 +69,23 @@ func TestOllamaClientAnswer(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("failed to decode payload: %v", err)
 		}
-		if payload.Model != "qwen3-vl:8b" {
-			t.Fatalf("expected model qwen3-vl:8b, got %s", payload.Model)
+		if payload.Model != "ministral-3:latest" {
+			t.Fatalf("expected model ministral-3:latest, got %s", payload.Model)
 		}
 		if !strings.Contains(payload.Prompt, "Question: What is the method?") {
 			t.Fatalf("prompt missing question: %s", payload.Prompt)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"response":"The paper uses contrastive learning.","done":true}`))
-	}))
-	defer server.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":"The paper uses contrastive learning.","done":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
 	client := &ollamaClient{
-		host:   server.URL,
-		model:  "qwen3-vl:8b",
-		client: server.Client(),
+		host:   "http://example.com",
+		model:  "ministral-3:latest",
+		client: &http.Client{Transport: rt},
 	}
 
 	answer, err := client.Answer(context.Background(), "Cool Paper", "What is the method?", "The method leverages contrastive learning across modalities.")
@@ -90,7 +98,7 @@ func TestOllamaClientAnswer(t *testing.T) {
 }
 
 func TestOllamaClientSuggestNotes(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		var payload struct {
 			Model  string `json:"model"`
 			Prompt string `json:"prompt"`
@@ -101,15 +109,17 @@ func TestOllamaClientSuggestNotes(t *testing.T) {
 		if !strings.Contains(payload.Prompt, "How to Read a Paper") {
 			t.Fatalf("prompt missing reference text: %s", payload.Prompt)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"response":"{\"notes\":[{\"title\":\"Problem\",\"body\":\"Body text\",\"reason\":\"First pass\",\"kind\":\"problem\"}]}","done":true}`))
-	}))
-	defer server.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":"{\"notes\":[{\"title\":\"Problem\",\"body\":\"Body text\",\"reason\":\"First pass\",\"kind\":\"problem\"}]}","done":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
 	client := &ollamaClient{
-		host:   server.URL,
-		model:  "qwen3-vl:8b",
-		client: server.Client(),
+		host:   "http://example.com",
+		model:  "ministral-3:latest",
+		client: &http.Client{Transport: rt},
 	}
 
 	notes, err := client.SuggestNotes(context.Background(), "Cool Paper", "abstract", []string{"foo"}, "body")
@@ -121,5 +131,37 @@ func TestOllamaClientSuggestNotes(t *testing.T) {
 	}
 	if notes[0].Title != "Problem" {
 		t.Fatalf("unexpected title: %s", notes[0].Title)
+	}
+}
+
+func TestOllamaClientReadingBrief(t *testing.T) {
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var payload struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if !strings.Contains(payload.Prompt, "\"deepDive\"") {
+			t.Fatalf("prompt missing schema: %s", payload.Prompt)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":"{\"summary\":[\"s1\"],\"technical\":[\"t1\"],\"deepDive\":[\"d1\"]}","done":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := &ollamaClient{
+		host:   "http://example.com",
+		model:  "ministral-3:latest",
+		client: &http.Client{Transport: rt},
+	}
+	brief, err := client.ReadingBrief(context.Background(), "Cool Paper", "body text")
+	if err != nil {
+		t.Fatalf("reading brief failed: %v", err)
+	}
+	if len(brief.Summary) != 1 || brief.Summary[0] != "s1" {
+		t.Fatalf("unexpected summary: %#v", brief.Summary)
 	}
 }

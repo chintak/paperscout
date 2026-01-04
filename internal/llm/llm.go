@@ -22,7 +22,7 @@ const (
 	ProviderOllama Provider = "ollama"
 
 	defaultOpenAIModel = "gpt-4o-mini"
-	defaultOllamaModel = "qwen3-vl:8b"
+	defaultOllamaModel = "ministral-3:latest"
 	maxSummaryChars    = 18_000
 	maxAnswerChars     = 12_000
 	maxSuggestionChars = 12_000

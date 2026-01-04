@@ -212,3 +212,25 @@ func TestBriefSectionStreamRequestsNextDelta(t *testing.T) {
 	}
 	close(updates)
 }
+
+func TestNavigationCheatsheetToggle(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
+
+	view := m.renderStackedDisplay()
+	if strings.Contains(view, "Navigation Cheatsheet") {
+		t.Fatal("navigation cheatsheet should be hidden by default")
+	}
+
+	m.actionToggleHelpCmd()
+	view = m.renderStackedDisplay()
+	if !strings.Contains(view, "Navigation Cheatsheet") {
+		t.Fatal("navigation cheatsheet did not appear after toggling help")
+	}
+
+	m.actionToggleHelpCmd()
+	view = m.renderStackedDisplay()
+	if strings.Contains(view, "Navigation Cheatsheet") {
+		t.Fatal("navigation cheatsheet should hide again after second toggle")
+	}
+}

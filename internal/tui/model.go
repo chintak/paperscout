@@ -1373,9 +1373,9 @@ func (m *model) actionSaveCmd() tea.Cmd {
 func (m *model) actionToggleHelpCmd() tea.Cmd {
 	m.helpVisible = !m.helpVisible
 	if m.helpVisible {
-		m.infoMessage = "Help overlay open. Press ? to hide."
+		m.infoMessage = "Navigation cheatsheet open. Press ? to hide."
 	} else {
-		m.infoMessage = "Help overlay hidden."
+		m.infoMessage = "Navigation cheatsheet hidden."
 	}
 	m.markViewportDirty()
 	return nil

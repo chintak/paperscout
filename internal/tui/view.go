@@ -72,10 +72,10 @@ func (m *model) renderStackedDisplay() string {
 		}
 		parts = append(parts, helperStyle.Render(message))
 	}
-	if legend := m.keyLegendView(); legend != "" {
-		parts = append(parts, legend)
-	}
 	if m.helpVisible {
+		if legend := m.keyLegendView(); legend != "" {
+			parts = append(parts, legend)
+		}
 		parts = append(parts, m.helpView())
 	}
 	return joinNonEmpty(parts)
@@ -246,7 +246,7 @@ func (m *model) keyLegendView() string {
 		{"n/N", "Next/prev match"},
 		{"g/G", "Top or bottom"},
 		{"r", "Load new URL"},
-		{"?", "Toggle help"},
+		{"?", "Toggle cheatsheet"},
 		{"Ctrl+K", "Command palette"},
 	}
 	rows := []string{sectionHeaderStyle.Render("Navigation Cheatsheet")}

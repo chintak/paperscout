@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -290,38 +289,16 @@ func splitSentences(text string) []string {
 }
 
 func fetchPDFText(ctx context.Context, pdfURL string) (string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pdfURL, nil)
+	cache, err := newPDFCache(nil)
+	if err != nil {
+		return "", err
+	}
+	path, err := cache.Fetch(ctx, pdfURL)
 	if err != nil {
 		return "", err
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("pdf download failed: %s (%s)", resp.Status, string(body))
-	}
-
-	tmp, err := os.CreateTemp("", "paperscout-*.pdf")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-
-	file, reader, err := pdf.Open(tmp.Name())
+	file, reader, err := pdf.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to open pdf: %w", err)
 	}

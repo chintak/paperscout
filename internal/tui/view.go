@@ -92,16 +92,7 @@ func (m *model) footerView() string {
 }
 
 func (m *model) composerHelpText() string {
-	switch m.composerMode {
-	case composerModeURL:
-		return "Enter to fetch • Esc to clear"
-	case composerModeQuestion:
-		return "Enter to send question • Esc to cancel"
-	case composerModeNote:
-		return "Ctrl+Enter to save note • Esc to cancel"
-	default:
-		return "Press m to capture a note or q to ask a question."
-	}
+	return "Enter: ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear"
 }
 
 func (m *model) viewSearch() string {

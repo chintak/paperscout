@@ -474,7 +474,15 @@ func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
 		m.cancelComposerEntry()
 		return nil, true
 	}
-	if isCtrlEnter(key) || (key.Type == tea.KeyEnter && m.composerAcceptsPlainEnter()) {
+	switch {
+	case isCtrlEnter(key):
+		m.composerMode = composerModeNote
+		return m.submitComposer(), true
+	case isShiftEnter(key):
+		m.composerMode = composerModeURL
+		return m.submitComposer(), true
+	case key.Type == tea.KeyEnter:
+		m.composerMode = composerModeQuestion
 		return m.submitComposer(), true
 	}
 	var cmd tea.Cmd
@@ -931,9 +939,9 @@ func isCtrlEnter(key tea.KeyMsg) bool {
 	}
 }
 
-func (m *model) composerAcceptsPlainEnter() bool {
-	switch m.composerMode {
-	case composerModeURL, composerModeQuestion:
+func isShiftEnter(key tea.KeyMsg) bool {
+	switch key.String() {
+	case "shift+enter", "alt+enter":
 		return true
 	default:
 		return false

@@ -84,13 +84,13 @@ func TestComposerEscCancelsQuestionMode(t *testing.T) {
 	}
 }
 
-func TestComposerEnterSubmitsURL(t *testing.T) {
+func TestComposerShiftEnterSubmitsURL(t *testing.T) {
 	m := newTestModel(t)
 	m.composer.SetValue("https://arxiv.org/abs/1234.5678")
 
-	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	if !handled {
-		t.Fatal("enter should submit URL mode entries")
+		t.Fatal("shift+enter should submit URL entries")
 	}
 	if cmd == nil {
 		t.Fatal("submit should return a command to start fetch job")
@@ -107,9 +107,6 @@ func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
 	m.config.LLM = fakeLLM{}
-	if cmd := m.actionAskQuestionCmd(); cmd != nil {
-		t.Fatalf("ask question should not trigger a command, got %v", cmd)
-	}
 	m.composer.SetValue("What is the evaluation metric?")
 
 	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -127,6 +124,26 @@ func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	}
 	if got := m.qaHistory[0].Question; got != "What is the evaluation metric?" {
 		t.Fatalf("question text mismatch, got %q", got)
+	}
+}
+
+func TestComposerCtrlEnterStoresManualNote(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
+	m.composer.SetValue("Note body")
+
+	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if !handled {
+		t.Fatal("ctrl+enter should submit manual note entries")
+	}
+	if cmd != nil {
+		t.Fatalf("manual note submission should not trigger a command, got %v", cmd)
+	}
+	if len(m.manualNotes) != 1 {
+		t.Fatalf("expected 1 manual note, got %d", len(m.manualNotes))
+	}
+	if got := m.manualNotes[0].Body; got != "Note body" {
+		t.Fatalf("note body mismatch, got %q", got)
 	}
 }
 

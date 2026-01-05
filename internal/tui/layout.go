@@ -75,11 +75,7 @@ type contentBuilder struct {
 }
 
 func (m *model) writeConversationStream(cb *contentBuilder) {
-	cb.WriteString(sectionHeaderStyle.Render("Conversation Stream"))
-	cb.WriteRune('\n')
 	if len(m.transcriptEntries) == 0 {
-		cb.WriteString(helperStyle.Render("Interactions will appear here once you load a paper."))
-		cb.WriteRune('\n')
 		return
 	}
 	wrap := m.wrapWidth(4)
@@ -213,9 +209,11 @@ func (m *model) buildIdleContent() displayView {
 	cb.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Alt+Enter to fetch metadata."))
 	cb.WriteRune('\n')
 	cb.WriteString(helperStyle.Render("Enter loads the paper; Ctrl+Enter saves a note; Esc clears the composer."))
-	cb.WriteRune('\n')
-	cb.WriteRune('\n')
-	m.writeConversationStream(cb)
+	if len(m.transcriptEntries) > 0 {
+		cb.WriteRune('\n')
+		cb.WriteRune('\n')
+		m.writeConversationStream(cb)
+	}
 
 	return displayView{
 		content:         cb.String(),

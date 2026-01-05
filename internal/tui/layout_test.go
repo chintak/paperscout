@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/viewport"
-
-	"github.com/csheth/browse/internal/llm"
 )
 
 func TestPageLayoutUpdate(t *testing.T) {
@@ -85,8 +83,8 @@ func TestFormatConversationEntryTableAlignment(t *testing.T) {
 func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
 	m := &model{
 		viewport: viewport.New(80, 20),
-		brief: llm.ReadingBrief{
-			Summary: []string{"### **Title**", "| **Col** | **Val** |"},
+		transcriptEntries: []transcriptEntry{
+			{Kind: "brief", Content: "### **Title**\n| **Col** | **Val** |"},
 		},
 	}
 	view := m.buildDisplayContent()

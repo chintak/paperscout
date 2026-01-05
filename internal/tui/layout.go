@@ -7,8 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/muesli/reflow/wordwrap"
-
-	"github.com/csheth/browse/internal/llm"
 )
 
 var (
@@ -153,102 +151,13 @@ func (m *model) writeHero(cb *contentBuilder) {
 
 func (m *model) buildDisplayContent() displayView {
 	cb := &contentBuilder{}
-	anchors := map[string]int{}
-	bulletWrap := m.wrapWidth(4)
-	suggestionLines := map[int]int{}
 	m.writeHero(cb)
 	m.writeConversationStream(cb)
 
-	renderBullets := func(items []string) {
-		for idx, item := range items {
-			formatted := formatConversationEntry(item, bulletWrap)
-			lines := splitLinesPreserve(formatted)
-			for _, line := range lines {
-				if line == "" {
-					cb.WriteRune('\n')
-					continue
-				}
-				plain := strings.TrimSpace(stripANSI(line))
-				if !isMarkdownTableLine(plain) {
-					cb.WriteString("  ")
-				}
-				cb.WriteString(line)
-				cb.WriteRune('\n')
-			}
-			if idx < len(items)-1 {
-				cb.WriteRune('\n')
-			}
-		}
-	}
-
-	renderSection := func(kind llm.BriefSectionKind, anchor, title string, items []string, state briefSectionState, emptyMsg string) {
-		if cb.Line() > 0 {
-			cb.WriteRune('\n')
-		}
-		anchors[anchor] = cb.Line()
-		cb.WriteString(sectionHeaderStyle.Render(title))
-		cb.WriteRune('\n')
-		fallback := m.fallbackForSection(kind)
-		renderFallback := func() {
-			if len(fallback) == 0 {
-				return
-			}
-			cb.WriteString(helperStyle.Render(fallbackNotice(kind)))
-			cb.WriteRune('\n')
-			renderBullets(fallback)
-		}
-		switch {
-		case len(items) > 0:
-			renderBullets(items)
-		case m.config.LLM == nil:
-			cb.WriteString(helperStyle.Render("Connect OpenAI or Ollama (flags or env) to unlock this section."))
-			cb.WriteRune('\n')
-			renderFallback()
-		case state.Loading:
-			cb.WriteString(helperStyle.Render(fmt.Sprintf("%s Generating…", m.spinner.View())))
-			cb.WriteRune('\n')
-			renderFallback()
-		case state.Error != "":
-			cb.WriteString(errorStyle.Render(state.Error))
-			cb.WriteRune('\n')
-			renderFallback()
-		case len(fallback) > 0:
-			renderFallback()
-		default:
-			cb.WriteString(helperStyle.Render(emptyMsg))
-			cb.WriteRune('\n')
-		}
-	}
-
-	renderSection(
-		llm.BriefSummary,
-		anchorSummary,
-		"Summary Pass",
-		m.brief.Summary,
-		m.sectionState(llm.BriefSummary),
-		"Press a to build the 3-bullet executive summary.",
-	)
-	renderSection(
-		llm.BriefTechnical,
-		anchorTechnical,
-		"Technical Details",
-		m.brief.Technical,
-		m.sectionState(llm.BriefTechnical),
-		"Press a to populate assumptions, data, models, and evaluation specifics.",
-	)
-	renderSection(
-		llm.BriefDeepDive,
-		anchorDeepDive,
-		"Deep Dive References",
-		m.brief.DeepDive,
-		m.sectionState(llm.BriefDeepDive),
-		"Press a to surface influential citations for further study.",
-	)
-
 	return displayView{
 		content:         cb.String(),
-		suggestionLines: suggestionLines,
-		anchors:         anchors,
+		suggestionLines: map[int]int{},
+		anchors:         map[string]int{},
 	}
 }
 

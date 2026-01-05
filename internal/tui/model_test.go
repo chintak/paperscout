@@ -521,7 +521,7 @@ func TestPrepareBriefFallbacks(t *testing.T) {
 	}
 }
 
-func TestDisplayContentIncludesFallbackWhileLoading(t *testing.T) {
+func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m := newTestModel(t)
 	m.config.LLM = fakeLLM{}
 	m.paper = &arxiv.Paper{
@@ -538,11 +538,8 @@ func TestDisplayContentIncludesFallbackWhileLoading(t *testing.T) {
 	m.briefSections[llm.BriefSummary] = briefSectionState{Loading: true}
 
 	view := m.buildDisplayContent()
-	if !strings.Contains(view.content, "Provisional summary from the arXiv abstract.") {
-		t.Fatalf("fallback notice missing in view:\n%s", view.content)
-	}
-	if !strings.Contains(view.content, "Sentence one.") {
-		t.Fatalf("summary fallback text missing in view:\n%s", view.content)
+	if strings.Contains(view.content, "Summary Pass") || strings.Contains(view.content, "Technical Details") || strings.Contains(view.content, "Deep Dive References") {
+		t.Fatalf("static brief sections should be omitted in view:\n%s", view.content)
 	}
 }
 

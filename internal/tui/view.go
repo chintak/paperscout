@@ -189,7 +189,6 @@ type keyHint struct {
 func (m *model) keyLegendView() string {
 	hints := []keyHint{
 		{"↑/↓", "Scroll"},
-		{"[/]", "Jump sections"},
 		{"g/G", "Top or bottom"},
 		{"r", "Load new URL"},
 		{"?", "Toggle cheatsheet"},
@@ -216,7 +215,7 @@ func (m *model) keyLegendView() string {
 func (m *model) helpView() string {
 	lines := []string{
 		sectionHeaderStyle.Render("Command Palette"),
-		helperStyle.Render("• use [ and ] to jump between Summary, Technical, and Deep Dive sections; g / G flies to the top or bottom."),
+		helperStyle.Render("• use g / G to jump to the top or bottom."),
 		helperStyle.Render("• press Ctrl+K to open the command palette, then type to filter actions and hit Enter to run them."),
 		helperStyle.Render("• use the palette to regenerate the LLM brief or ask questions once OpenAI or Ollama is configured."),
 		helperStyle.Render("• press r to paste a new URL, Ctrl+C to quit."),

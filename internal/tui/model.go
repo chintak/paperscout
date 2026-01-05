@@ -1136,6 +1136,24 @@ func (m *model) updateBriefContent(kind llm.BriefSectionKind, bullets []string) 
 	}
 }
 
+var briefListPrefixPattern = regexp.MustCompile(`^\s*(?:[-*+]|[0-9]+[.)])\s+`)
+
+func briefMessageContent(kind llm.BriefSectionKind, bullets []string) string {
+	title := briefSectionTitle(kind)
+	if len(bullets) == 0 {
+		return fmt.Sprintf("%s ready.", title)
+	}
+	lines := []string{fmt.Sprintf("### %s", title)}
+	for _, bullet := range bullets {
+		trimmed := strings.TrimSpace(briefListPrefixPattern.ReplaceAllString(bullet, ""))
+		if trimmed == "" {
+			continue
+		}
+		lines = append(lines, "- "+trimmed)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func briefSectionTitle(kind llm.BriefSectionKind) string {
 	switch kind {
 	case llm.BriefSummary:
@@ -1714,9 +1732,9 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 			m.infoMessage = "Reading brief ready."
 		}
 		if len(msg.bullets) > 0 {
-			m.appendTranscript("brief", fmt.Sprintf("%s ready: %s", title, previewText(strings.Join(msg.bullets, " | "), transcriptPreviewLimit)))
+			m.appendTranscript("brief", briefMessageContent(msg.kind, msg.bullets))
 		} else {
-			m.appendTranscript("brief", fmt.Sprintf("%s ready.", title))
+			m.appendTranscript("brief", briefMessageContent(msg.kind, nil))
 		}
 		update := notes.SnapshotUpdate{
 			SectionMetadata: []notes.BriefSectionMetadata{

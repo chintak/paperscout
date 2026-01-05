@@ -8,7 +8,6 @@ const (
 	stageInput stage = iota
 	stageLoading
 	stageDisplay
-	stageSearch
 	stageSaving
 	stagePalette
 )

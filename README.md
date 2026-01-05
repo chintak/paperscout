@@ -12,7 +12,7 @@ go mod tidy
 go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json
 ```
 - Paste an arXiv URL or bare identifier and hit Enter.
-- Regenerate the LLM reading brief with `a`, add manual notes with `m`, ask questions with `q`, search within the current view with `/`, and save with `s`.
+- Regenerate the LLM reading brief with `a`, add manual notes with `m`, ask questions with `q`, and save with `s`.
 - Hit `Ctrl+K` to open the command palette whenever you forget a shortcut—type to filter and press Enter to run the highlighted action.
 - The layout is a single scrolling column—new fetches append session updates without switching views, so the current context stays visible while jobs run.
 - Every paper renders an AI-powered reading brief with three passes (summary, technical details, deep-dive references); press `a` anytime to regenerate it from the parsed PDF.
@@ -36,13 +36,12 @@ Runs table-driven unit tests for the `internal/arxiv` and `internal/notes` packa
 
 ## Controls & Features
 - **Three-pass brief** – Generates summary, technical, and deep-dive sections straight from the parsed PDF.
-- **Full PDF ingestion** – Downloads the "View PDF" link, converts it to text locally, and uses that text for summaries, search, and question answering.
+- **Full PDF ingestion** – Downloads the "View PDF" link, converts it to text locally, and uses that text for summaries and question answering.
 - **LLM summaries & Q&A** – Hit `a` to re-run the summary and `q` to ask questions. PaperScout streams the relevant PDF context to OpenAI or Ollama and logs each answer in the transcript.
-- **Searchable viewport** – Scroll the brief like a pager (mouse wheel, PgUp/PgDn, or viewport keys) and jump between highlighted matches with `/`, `n`, and `N`.
 - **Subject context** – Shows arXiv subject tags alongside the title to prime your reading session.
 - **Manual notes** – Write free-form notes without leaving the TUI; they'll be appended to the transcript and saved via the composer.
 - **Persistent knowledge base** – Saved notes reappear when revisiting the same paper so you can extend or refactor them without duplication.
-- **Command palette** – `Ctrl+K` exposes every action (summaries, Q&A, search, save, etc.) with fuzzy filtering so you can stay in flow without memorizing all shortcuts.
+- **Command palette** – `Ctrl+K` exposes every action (summaries, Q&A, save, etc.) with fuzzy filtering so you can stay in flow without memorizing all shortcuts.
 - **Job telemetry** – The session meter shows live job states/durations (fetching, saving, LLM tasks), and the job bus logs each completion with timing/error details for easy tracing.
 - **Session log + composer** – The log captures paper loads, summaries, Q&A, and saves for later review, while the fixed multi-line composer at the bottom keeps note-taking front-and-center.
 

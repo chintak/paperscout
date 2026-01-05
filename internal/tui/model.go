@@ -36,11 +36,6 @@ type Config struct {
 
 // New returns a tea.Model ready to be mounted into a Program.
 func New(config Config) tea.Model {
-	searchInput := textinput.New()
-	searchInput.Placeholder = "Search within the current paper…"
-	searchInput.CharLimit = 120
-	searchInput.Width = 60
-
 	paletteInput := textinput.New()
 	paletteInput.Placeholder = "Filter commands…"
 	paletteInput.CharLimit = 80
@@ -81,7 +76,6 @@ func New(config Config) tea.Model {
 	m := &model{
 		config:                  config,
 		stage:                   stageInput,
-		searchInput:             searchInput,
 		spinner:                 spin,
 		viewport:                vp,
 		transcriptViewport:      logViewport,
@@ -90,7 +84,6 @@ func New(config Config) tea.Model {
 		persisted:               map[int]bool{},
 		suggestionLines:         map[int]int{},
 		cursorLine:              0,
-		searchMatchIdx:          -1,
 		viewportDirty:           true,
 		infoMessage:             "Paste an arXiv url or identifier to begin.",
 		sectionAnchors:          map[string]int{},
@@ -111,7 +104,6 @@ type model struct {
 	config Config
 	stage  stage
 
-	searchInput        textinput.Model
 	spinner            spinner.Model
 	viewport           viewport.Model
 	transcriptViewport viewport.Model
@@ -130,9 +122,6 @@ type model struct {
 	viewportLines           []string
 	viewportContent         string
 	viewportDirty           bool
-	searchQuery             string
-	searchMatches           []matchRange
-	searchMatchIdx          int
 	infoMessage             string
 	errorMessage            string
 	helpVisible             bool
@@ -228,7 +217,6 @@ const (
 	actionSummarize   actionID = "summarize"
 	actionAskQuestion actionID = "ask_question"
 	actionManualNote  actionID = "manual_note"
-	actionSearch      actionID = "search"
 	actionSaveNotes   actionID = "save_notes"
 	actionToggleHelp  actionID = "toggle_help"
 	actionLoadNew     actionID = "load_new"
@@ -238,7 +226,6 @@ var paletteCommands = []uiCommand{
 	{id: actionSummarize, title: "Summarize paper", description: "Regenerate the LLM reading brief for the loaded PDF", shortcut: "a"},
 	{id: actionAskQuestion, title: "Ask a question", description: "Open the Q&A prompt", shortcut: "q"},
 	{id: actionManualNote, title: "Add manual note", description: "Draft a manual note", shortcut: "m"},
-	{id: actionSearch, title: "Search within paper", description: "Filter the current session by text", shortcut: "/"},
 	{id: actionSaveNotes, title: "Save manual notes", description: "Persist any manual notes you drafted this session", shortcut: "s"},
 	{id: actionToggleHelp, title: "Toggle help overlay", description: "Show or hide the command cheatsheet", shortcut: "?"},
 	{id: actionLoadNew, title: "Load another paper", description: "Return to the URL prompt", shortcut: "r"},
@@ -286,10 +273,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEsc:
 			switch m.stage {
-			case stageSearch:
-				m.stage = stageDisplay
-				m.searchInput.Blur()
-				return m, nil
 			case stagePalette:
 				m.closeCommandPalette()
 				return m, nil
@@ -425,16 +408,6 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case stageDisplay:
 		return m.handleDisplayKey(key)
-	case stageSearch:
-		var cmd tea.Cmd
-		m.searchInput, cmd = m.searchInput.Update(key)
-		if key.Type == tea.KeyEnter {
-			value := strings.TrimSpace(m.searchInput.Value())
-			m.stage = stageDisplay
-			m.applySearch(value)
-			return m, cmd
-		}
-		return m, cmd
 	case stageSaving:
 		return m, nil
 	case stagePalette:
@@ -456,12 +429,6 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.actionAskQuestionCmd()
 	case "m":
 		return m, m.actionManualNoteCmd()
-	case "/":
-		return m, m.actionSearchCmd()
-	case "n":
-		m.advanceSearch(1)
-	case "N":
-		m.advanceSearch(-1)
 	case "g":
 		m.scrollToTop()
 	case "G":
@@ -724,28 +691,12 @@ func (m *model) refreshViewport() {
 		}
 	}
 
-	content := view.content
-	if m.searchQuery != "" {
-		m.searchMatches = findMatches(content, m.searchQuery)
-		if len(m.searchMatches) == 0 {
-			m.searchMatchIdx = -1
-		} else if m.searchMatchIdx < 0 || m.searchMatchIdx >= len(m.searchMatches) {
-			m.searchMatchIdx = 0
-		}
-		content = highlightMatches(content, m.searchMatches, m.searchMatchIdx)
-	} else {
-		m.searchMatches = nil
-		m.searchMatchIdx = -1
-	}
-	m.viewport.SetContent(content)
+	m.viewport.SetContent(view.content)
 	targetYOffset := prevYOffset
 	if forcedYOffset >= 0 {
 		targetYOffset = forcedYOffset
 	}
 	m.viewport.SetYOffset(m.clampYOffset(targetYOffset))
-	if m.searchQuery != "" && len(m.searchMatches) > 0 && m.searchMatchIdx >= 0 {
-		m.scrollToCurrentMatch()
-	}
 }
 
 func (m *model) refreshTranscript() {
@@ -1084,56 +1035,6 @@ func (m *model) jumpToSection(anchor string) {
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
 	m.infoMessage = fmt.Sprintf("Jumped to %s.", sectionLabel(anchor))
-}
-
-func (m *model) applySearch(query string) {
-	query = strings.TrimSpace(query)
-	m.searchInput.Blur()
-	m.searchQuery = query
-	if query == "" {
-		m.searchMatches = nil
-		m.searchMatchIdx = -1
-		m.searchInput.SetValue("")
-	} else {
-		m.searchMatchIdx = 0
-	}
-	m.markViewportDirty()
-	m.refreshViewportIfDirty()
-	if query == "" {
-		m.infoMessage = "Cleared search filter."
-	} else if len(m.searchMatches) == 0 {
-		m.infoMessage = fmt.Sprintf("No matches for %q.", query)
-	} else {
-		m.infoMessage = fmt.Sprintf("Search ready for %q.", query)
-	}
-}
-
-func (m *model) clearSearch() {
-	m.searchQuery = ""
-	m.searchMatches = nil
-	m.searchMatchIdx = -1
-	m.searchInput.SetValue("")
-	m.searchInput.Blur()
-	m.markViewportDirty()
-}
-
-func (m *model) advanceSearch(delta int) {
-	if m.searchQuery == "" {
-		m.infoMessage = "Start a search with / first."
-		return
-	}
-	if len(m.searchMatches) == 0 {
-		m.infoMessage = fmt.Sprintf("No matches for %q.", m.searchQuery)
-		return
-	}
-	count := len(m.searchMatches)
-	m.searchMatchIdx = (m.searchMatchIdx + delta) % count
-	if m.searchMatchIdx < 0 {
-		m.searchMatchIdx += count
-	}
-	m.infoMessage = fmt.Sprintf("Match %d/%d for %q.", m.searchMatchIdx+1, count, m.searchQuery)
-	m.markViewportDirty()
-	m.refreshViewportIfDirty()
 }
 
 func (m *model) resetBriefState() {
@@ -1506,18 +1407,6 @@ func (m *model) actionManualNoteCmd() tea.Cmd {
 	return nil
 }
 
-func (m *model) actionSearchCmd() tea.Cmd {
-	if m.paper == nil {
-		m.infoMessage = "Load a paper before searching."
-		return nil
-	}
-	m.stage = stageSearch
-	m.searchInput.Placeholder = "Search within the current paper…"
-	m.searchInput.SetValue(m.searchQuery)
-	m.searchInput.Focus()
-	return nil
-}
-
 func (m *model) actionSaveCmd() tea.Cmd {
 	notesToSave := m.collectSelectedNotes()
 	if len(notesToSave) == 0 {
@@ -1560,7 +1449,6 @@ func (m *model) actionLoadNewCmd() tea.Cmd {
 	m.sectionAnchors = map[string]int{}
 	m.suggestionLoading = false
 	m.pendingFocusAnchor = ""
-	m.clearSearch()
 	m.infoMessage = "Ready for another paper."
 	m.markViewportDirty()
 	m.composer.SetValue("")
@@ -1588,8 +1476,6 @@ func (m *model) commandAvailable(id actionID) bool {
 		return m.paper != nil && m.config.LLM != nil
 	case actionManualNote:
 		return m.paper != nil
-	case actionSearch:
-		return m.paper != nil
 	case actionSaveNotes:
 		return len(m.collectSelectedNotes()) > 0
 	case actionToggleHelp:
@@ -1609,8 +1495,6 @@ func (m *model) runCommand(id actionID) tea.Cmd {
 		return m.actionAskQuestionCmd()
 	case actionManualNote:
 		return m.actionManualNoteCmd()
-	case actionSearch:
-		return m.actionSearchCmd()
 	case actionSaveNotes:
 		return m.actionSaveCmd()
 	case actionToggleHelp:
@@ -1729,7 +1613,6 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.viewport.SetYOffset(0)
 	m.clearSelection()
 	m.pendingFocusAnchor = anchorSummary
-	m.clearSearch()
 	m.errorMessage = ""
 	m.infoMessage = fmt.Sprintf("Loaded %s. Generating reading brief…", m.paper.Title)
 	m.hydrateConversationHistory()
@@ -2006,29 +1889,6 @@ func humanDuration(d time.Duration) string {
 	return fmt.Sprintf("%dms", ms)
 }
 
-func (m *model) scrollToCurrentMatch() {
-	if len(m.searchMatches) == 0 || m.searchMatchIdx < 0 || m.searchMatchIdx >= len(m.searchMatches) {
-		return
-	}
-	match := m.searchMatches[m.searchMatchIdx]
-	line := lineNumberAtOffset(m.viewportContent, match.start)
-	target := line - 1
-	if target < 0 {
-		target = 0
-	}
-	m.viewport.SetYOffset(target)
-}
-
-func (m *model) searchStatusLine() string {
-	if m.searchQuery == "" {
-		return ""
-	}
-	if len(m.searchMatches) == 0 {
-		return fmt.Sprintf("Search %q — no matches", m.searchQuery)
-	}
-	return fmt.Sprintf("Search %q — match %d/%d", m.searchQuery, m.searchMatchIdx+1, len(m.searchMatches))
-}
-
 func (m *model) clampYOffset(offset int) int {
 	maxOffset := m.lineCount - m.viewport.Height
 	if m.viewport.Height <= 0 {
@@ -2047,14 +1907,12 @@ func (m *model) clampYOffset(offset int) int {
 }
 
 var (
-	titleStyle           = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Underline(true)
-	subtitleStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("147"))
-	sectionHeaderStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
-	subjectStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("110"))
-	errorStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	helperStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	searchHighlightStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("190"))
-	searchCurrentStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("229"))
+	titleStyle         = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Underline(true)
+	subtitleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("147"))
+	sectionHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81"))
+	subjectStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("110"))
+	errorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	helperStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
 	heroAccentColor        = lipgloss.Color("#ff8c00")
 	heroEmberColor         = lipgloss.Color("#2b1400")

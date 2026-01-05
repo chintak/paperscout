@@ -15,8 +15,6 @@ func (m *model) View() string {
 		return m.viewInput()
 	case stageLoading, stageDisplay:
 		return m.viewDisplay()
-	case stageSearch:
-		return m.viewSearch()
 	case stageSaving:
 		return m.viewDisplay()
 	case stagePalette:
@@ -45,9 +43,6 @@ func (m *model) viewDisplay() string {
 func (m *model) renderStackedDisplay() string {
 	parts := []string{m.heroView()}
 	parts = append(parts, m.viewport.View())
-	if status := m.searchStatusLine(); status != "" {
-		parts = append(parts, helperStyle.Render(status))
-	}
 	if m.errorMessage != "" {
 		parts = append(parts, errorStyle.Render(m.errorMessage))
 	}
@@ -111,16 +106,6 @@ func (m *model) lastTranscriptSummary() string {
 	}
 	entry := m.transcriptEntries[len(m.transcriptEntries)-1]
 	return fmt.Sprintf("%s: %s", entry.Kind, entry.Content)
-}
-
-func (m *model) viewSearch() string {
-	var b strings.Builder
-	b.WriteString(sectionHeaderStyle.Render("Search Current Session"))
-	b.WriteRune('\n')
-	b.WriteString(m.searchInput.View())
-	b.WriteRune('\n')
-	b.WriteString(helperStyle.Render("Press Enter to apply search, Esc to cancel."))
-	return joinNonEmpty([]string{m.frameWithHero(b.String()), m.composerPanel(), m.footerView()})
 }
 
 func (m *model) viewPalette() string {
@@ -201,8 +186,6 @@ func (m *model) keyLegendView() string {
 		{"[/]", "Jump sections"},
 		{"a", "Regenerate brief"},
 		{"q", "Ask question"},
-		{"/", "Search"},
-		{"n/N", "Next/prev match"},
 		{"g/G", "Top or bottom"},
 		{"r", "Load new URL"},
 		{"?", "Toggle cheatsheet"},
@@ -230,7 +213,6 @@ func (m *model) helpView() string {
 	lines := []string{
 		sectionHeaderStyle.Render("Command Palette"),
 		helperStyle.Render("• use [ and ] to jump between Summary, Technical, and Deep Dive sections; g / G flies to the top or bottom."),
-		helperStyle.Render("• / opens search, n / N cycles matches, and Esc exits overlays."),
 		helperStyle.Render("• press a to regenerate the LLM reading brief and q to ask questions once OpenAI or Ollama is configured."),
 		helperStyle.Render("• press Ctrl+K to open the command palette, then type to filter actions and hit Enter to run them."),
 		helperStyle.Render("• press r to paste a new URL, Ctrl+C to quit."),

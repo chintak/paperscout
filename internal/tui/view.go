@@ -26,23 +26,8 @@ func (m *model) View() string {
 }
 
 func (m *model) viewInput() string {
-	var sections []string
-	sections = append(sections, m.heroView())
-
-	form := strings.Builder{}
-	form.WriteString(sectionHeaderStyle.Render("Paste an arXiv URL in the Composer"))
-	form.WriteRune('\n')
-	form.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Enter to fetch metadata."))
-	form.WriteRune('\n')
-	form.WriteString(helperStyle.Render("Shift+Enter adds a new line; Esc clears the composer."))
-	form.WriteRune('\n')
-	form.WriteString(helperStyle.Render(m.infoMessage))
-	if m.errorMessage != "" {
-		form.WriteRune('\n')
-		form.WriteString(errorStyle.Render(m.errorMessage))
-	}
-	sections = append(sections, form.String())
-	body := strings.Join(sections, "\n\n")
+	m.refreshViewportIfDirty()
+	body := m.renderStackedDisplay()
 	return joinNonEmpty([]string{body, m.composerPanel(), m.footerView()})
 }
 

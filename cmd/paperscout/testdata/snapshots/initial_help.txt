@@ -10,6 +10,10 @@ Navigate arXiv findings with PaperScout.
 Paste an arXiv URL in the Composer
 Type an arXiv URL or identifier below and press Enter to fetch metadata.
 Shift+Enter adds a new line; Esc clears the composer.
+
+Conversation Stream
+Interactions will appear here once you load a paper.
+
 Paste an arXiv url or identifier to begin.
 
 Composer

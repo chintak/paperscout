@@ -565,16 +565,14 @@ func (m *model) refreshTranscriptIfDirty() {
 func (m *model) refreshViewport() {
 	m.viewportDirty = false
 	prevYOffset := m.viewport.YOffset
+	var view displayView
 	if m.paper == nil {
-		m.viewportContent = ""
-		m.viewport.SetContent("")
-		m.suggestionLines = map[int]int{}
-		m.sectionAnchors = map[string]int{}
-		m.viewportLines = nil
-		m.lineCount = 0
-		return
+		m.viewport.Height = m.layout.transcriptHeight
+		view = m.buildIdleContent()
+	} else {
+		m.viewport.Height = m.layout.viewportHeight
+		view = m.buildDisplayContent()
 	}
-	view := m.buildDisplayContent()
 	m.viewportContent = view.content
 	m.suggestionLines = view.suggestionLines
 	m.sectionAnchors = view.anchors

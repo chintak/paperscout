@@ -172,6 +172,27 @@ func (m *model) buildDisplayContent() displayView {
 	}
 }
 
+func (m *model) buildIdleContent() displayView {
+	cb := &contentBuilder{}
+	cb.WriteString(sectionHeaderStyle.Render("Paste an arXiv URL in the Composer"))
+	cb.WriteRune('\n')
+	cb.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Enter to fetch metadata."))
+	cb.WriteRune('\n')
+	cb.WriteString(helperStyle.Render("Shift+Enter adds a new line; Esc clears the composer."))
+	cb.WriteRune('\n')
+	cb.WriteRune('\n')
+	cb.WriteString(sectionHeaderStyle.Render("Conversation Stream"))
+	cb.WriteRune('\n')
+	cb.WriteString(helperStyle.Render("Interactions will appear here once you load a paper."))
+	cb.WriteRune('\n')
+
+	return displayView{
+		content:         cb.String(),
+		suggestionLines: map[int]int{},
+		anchors:         map[string]int{},
+	}
+}
+
 func indentMultiline(text, prefix string) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {

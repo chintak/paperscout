@@ -130,6 +130,7 @@ type model struct {
 	briefSections           map[llm.BriefSectionKind]briefSectionState
 	briefFallbacks          map[llm.BriefSectionKind][]string
 	briefContexts           map[llm.BriefSectionKind]string
+	briefMessageIndex       map[llm.BriefSectionKind]int
 	briefChunks             []briefctx.Chunk
 	briefStreamCancels      map[llm.BriefSectionKind]context.CancelFunc
 	briefLoading            bool
@@ -617,6 +618,7 @@ func (m *model) hydrateConversationHistory() {
 		return entries[i].Timestamp.Before(entries[j].Timestamp)
 	})
 	m.transcriptEntries = entries
+	m.mapBriefMessages()
 	m.markTranscriptDirty()
 	m.markViewportDirty()
 }
@@ -1046,6 +1048,7 @@ func (m *model) resetBriefState() {
 	m.briefChunks = nil
 	m.briefStreamCancels = map[llm.BriefSectionKind]context.CancelFunc{}
 	m.briefLoading = false
+	m.briefMessageIndex = nil
 }
 
 func (m *model) prepareBriefFallbacks() {
@@ -1139,11 +1142,18 @@ func (m *model) updateBriefContent(kind llm.BriefSectionKind, bullets []string) 
 var briefListPrefixPattern = regexp.MustCompile(`^\s*(?:[-*+]|[0-9]+[.)])\s+`)
 
 func briefMessageContent(kind llm.BriefSectionKind, bullets []string) string {
+	return briefMessageContentWithNotice(kind, bullets, "")
+}
+
+func briefMessageContentWithNotice(kind llm.BriefSectionKind, bullets []string, notice string) string {
 	title := briefSectionTitle(kind)
-	if len(bullets) == 0 {
+	if len(bullets) == 0 && strings.TrimSpace(notice) == "" {
 		return fmt.Sprintf("%s ready.", title)
 	}
 	lines := []string{fmt.Sprintf("### %s", title)}
+	if trimmed := strings.TrimSpace(notice); trimmed != "" {
+		lines = append(lines, fmt.Sprintf("> %s", trimmed))
+	}
 	for _, bullet := range bullets {
 		trimmed := strings.TrimSpace(briefListPrefixPattern.ReplaceAllString(bullet, ""))
 		if trimmed == "" {
@@ -1152,6 +1162,32 @@ func briefMessageContent(kind llm.BriefSectionKind, bullets []string) string {
 		lines = append(lines, "- "+trimmed)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func briefMessageKind(content string) (llm.BriefSectionKind, bool) {
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "###") {
+			heading := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+			switch strings.ToLower(heading) {
+			case strings.ToLower(briefSectionTitle(llm.BriefSummary)):
+				return llm.BriefSummary, true
+			case strings.ToLower(briefSectionTitle(llm.BriefTechnical)):
+				return llm.BriefTechnical, true
+			case strings.ToLower(briefSectionTitle(llm.BriefDeepDive)):
+				return llm.BriefDeepDive, true
+			}
+		}
+	}
+	trimmed := strings.TrimSpace(content)
+	for _, kind := range briefSectionKinds {
+		title := briefSectionTitle(kind)
+		if strings.HasPrefix(strings.ToLower(trimmed), strings.ToLower(title+" ready")) {
+			return kind, true
+		}
+	}
+	return llm.BriefSummary, false
 }
 
 func briefSectionTitle(kind llm.BriefSectionKind) string {
@@ -1180,6 +1216,29 @@ func briefSectionAnchor(kind llm.BriefSectionKind) string {
 	}
 }
 
+func (m *model) briefBullets(kind llm.BriefSectionKind) []string {
+	switch kind {
+	case llm.BriefSummary:
+		return m.brief.Summary
+	case llm.BriefTechnical:
+		return m.brief.Technical
+	case llm.BriefDeepDive:
+		return m.brief.DeepDive
+	default:
+		return nil
+	}
+}
+
+func (m *model) pendingBriefNotice() string {
+	if m.config.LLM == nil {
+		return "Configure an LLM provider to generate this section."
+	}
+	if m.paper != nil && strings.TrimSpace(m.paper.FullText) == "" {
+		return "PDF text missing; brief generation skipped."
+	}
+	return "Awaiting LLM output."
+}
+
 func jobKindForSection(kind llm.BriefSectionKind) jobKind {
 	switch kind {
 	case llm.BriefSummary:
@@ -1198,6 +1257,69 @@ func (m *model) fallbackForSection(kind llm.BriefSectionKind) []string {
 		return nil
 	}
 	return m.briefFallbacks[kind]
+}
+
+func (m *model) mapBriefMessages() {
+	if len(m.transcriptEntries) == 0 {
+		m.briefMessageIndex = nil
+		return
+	}
+	if m.briefMessageIndex == nil {
+		m.briefMessageIndex = map[llm.BriefSectionKind]int{}
+	}
+	for idx, entry := range m.transcriptEntries {
+		if entry.Kind != "brief" {
+			continue
+		}
+		if kind, ok := briefMessageKind(entry.Content); ok {
+			m.briefMessageIndex[kind] = idx
+		}
+	}
+}
+
+func (m *model) setBriefMessage(kind llm.BriefSectionKind, content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	if m.briefMessageIndex == nil {
+		m.briefMessageIndex = map[llm.BriefSectionKind]int{}
+	}
+	if idx, ok := m.briefMessageIndex[kind]; ok && idx >= 0 && idx < len(m.transcriptEntries) {
+		entry := &m.transcriptEntries[idx]
+		entry.Kind = "brief"
+		entry.Content = content
+		entry.Timestamp = time.Now()
+		m.markTranscriptDirty()
+		m.markViewportDirty()
+		return
+	}
+	idx := m.appendTranscriptEntry("brief", content)
+	m.briefMessageIndex[kind] = idx
+}
+
+func (m *model) seedBriefMessages() {
+	if m.paper == nil {
+		return
+	}
+	m.mapBriefMessages()
+	for _, kind := range briefSectionKinds {
+		if m.briefMessageIndex != nil {
+			if _, ok := m.briefMessageIndex[kind]; ok {
+				continue
+			}
+		}
+		bullets := m.briefBullets(kind)
+		notice := ""
+		if len(bullets) == 0 {
+			if fallback := m.fallbackForSection(kind); len(fallback) > 0 {
+				bullets = fallback
+				notice = fallbackNotice(kind)
+			} else {
+				notice = m.pendingBriefNotice()
+			}
+		}
+		m.setBriefMessage(kind, briefMessageContentWithNotice(kind, bullets, notice))
+	}
 }
 
 func draftAnswerForQuestion(paper *arxiv.Paper) string {
@@ -1660,6 +1782,7 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.composer.SetValue("")
 	m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
 	m.appendTranscript("paper", fmt.Sprintf("Loaded %s", m.paper.Title))
+	m.seedBriefMessages()
 	snapshotCmd := m.ensureConversationSnapshotCmd()
 
 	if m.config.LLM == nil {
@@ -1731,11 +1854,7 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 		} else {
 			m.infoMessage = "Reading brief ready."
 		}
-		if len(msg.bullets) > 0 {
-			m.appendTranscript("brief", briefMessageContent(msg.kind, msg.bullets))
-		} else {
-			m.appendTranscript("brief", briefMessageContent(msg.kind, nil))
-		}
+		m.setBriefMessage(msg.kind, briefMessageContent(msg.kind, msg.bullets))
 		update := notes.SnapshotUpdate{
 			SectionMetadata: []notes.BriefSectionMetadata{
 				{Kind: string(msg.kind), Status: "completed"},
@@ -1764,7 +1883,9 @@ func (m *model) handleBriefSectionStream(msg briefSectionStreamMsg) tea.Cmd {
 	}
 	if len(msg.bullets) > 0 {
 		m.updateBriefContent(msg.kind, msg.bullets)
-		m.markViewportDirty()
+		m.setBriefMessage(msg.kind, briefMessageContent(msg.kind, msg.bullets))
+	} else if msg.done {
+		m.setBriefMessage(msg.kind, briefMessageContent(msg.kind, nil))
 	}
 	if msg.done {
 		return nil

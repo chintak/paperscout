@@ -521,6 +521,67 @@ func TestPrepareBriefFallbacks(t *testing.T) {
 	}
 }
 
+func TestSeedBriefMessagesUsesFallbacks(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{
+		ID:               "1234.56789",
+		Title:            "Fixture",
+		Abstract:         "Sentence one. Sentence two.",
+		KeyContributions: []string{"Contribution A"},
+		Subjects:         []string{"cs.LG"},
+		Authors:          []string{"Alice"},
+		PDFURL:           "https://arxiv.org/pdf/1234.56789.pdf",
+	}
+	m.prepareBriefFallbacks()
+
+	m.seedBriefMessages()
+
+	if len(m.transcriptEntries) != len(briefSectionKinds) {
+		t.Fatalf("expected %d brief messages, got %d", len(briefSectionKinds), len(m.transcriptEntries))
+	}
+	summaryIdx, ok := m.briefMessageIndex[llm.BriefSummary]
+	if !ok {
+		t.Fatal("expected summary brief message to be indexed")
+	}
+	content := m.transcriptEntries[summaryIdx].Content
+	if !strings.Contains(content, "### Summary") {
+		t.Fatalf("expected summary heading, got %q", content)
+	}
+	if !strings.Contains(content, fallbackNotice(llm.BriefSummary)) {
+		t.Fatalf("expected fallback notice, got %q", content)
+	}
+}
+
+func TestBriefSectionResultUpdatesSeededMessage(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{
+		ID:       "1234.56789",
+		Title:    "Fixture",
+		Abstract: "Sentence one. Sentence two.",
+	}
+	m.prepareBriefFallbacks()
+	m.seedBriefMessages()
+	summaryIdx := m.briefMessageIndex[llm.BriefSummary]
+	initialCount := len(m.transcriptEntries)
+
+	msg := briefSectionMsg{
+		paperID: m.paper.ID,
+		kind:    llm.BriefSummary,
+		bullets: []string{"Bullet"},
+	}
+	m.handleBriefSectionResult(msg)
+
+	if len(m.transcriptEntries) != initialCount {
+		t.Fatalf("expected brief message update in place, got %d entries", len(m.transcriptEntries))
+	}
+	if m.briefMessageIndex[llm.BriefSummary] != summaryIdx {
+		t.Fatal("expected summary message index to remain stable")
+	}
+	if !strings.Contains(m.transcriptEntries[summaryIdx].Content, "Bullet") {
+		t.Fatalf("expected summary message to be updated, got %q", m.transcriptEntries[summaryIdx].Content)
+	}
+}
+
 func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m := newTestModel(t)
 	m.config.LLM = fakeLLM{}

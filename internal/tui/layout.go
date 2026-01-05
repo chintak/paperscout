@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/muesli/reflow/wordwrap"
 
@@ -17,6 +18,7 @@ var (
 	markdownItalicPattern         = regexp.MustCompile(`\*([^*]+)\*`)
 	markdownItalicUnderscore      = regexp.MustCompile(`_([^_]+)_`)
 	markdownBulletPattern         = regexp.MustCompile(`^(\s*)[-*+]\s+`)
+	markdownOrderedListPattern    = regexp.MustCompile(`^(\s*)(\d+[.)])\s+`)
 	markdownHeadingPattern        = regexp.MustCompile(`^\s*#{1,6}\s+`)
 	markdownCodeFencePattern      = regexp.MustCompile("^\\s*```")
 	markdownInlineCodePattern     = regexp.MustCompile("`([^`]+)`")
@@ -85,10 +87,17 @@ const (
 	markdownLinePlain markdownLineKind = iota
 	markdownLineHeading
 	markdownLineBullet
+	markdownLineOrdered
 	markdownLineTable
 	markdownLineQuote
 	markdownLineCode
 )
+
+type markdownLine struct {
+	text   string
+	kind   markdownLineKind
+	prefix string
+}
 
 func (m *model) writeConversationStream(cb *contentBuilder) {
 	if len(m.transcriptEntries) == 0 {
@@ -322,26 +331,34 @@ func formatConversationEntry(content string, wrap int) string {
 			rendered = append(rendered, markdownCodeStyle.Render(line))
 			continue
 		}
-		formatted, kind := formatMarkdownLineWithKind(line)
-		if wrap > 0 && kind != markdownLineTable {
-			formatted = wordwrap.String(formatted, wrap)
+		formatted := formatMarkdownLineWithKind(line)
+		content := formatted.text
+		if wrap > 0 && formatted.kind != markdownLineTable {
+			if formatted.prefix != "" {
+				content = wrapWithPrefix(content, formatted.prefix, wrap)
+			} else {
+				content = wordwrap.String(content, wrap)
+			}
 		}
-		rendered = append(rendered, styleMarkdownLine(formatted, kind))
+		rendered = append(rendered, styleMarkdownLine(content, formatted.kind))
 	}
 	return strings.Join(rendered, "\n")
 }
 
-func formatMarkdownLineWithKind(line string) (string, markdownLineKind) {
+func formatMarkdownLineWithKind(line string) markdownLine {
 	if line == "" {
-		return "", markdownLinePlain
+		return markdownLine{text: "", kind: markdownLinePlain}
 	}
 	trimmed := strings.TrimSpace(line)
 	kind := markdownLinePlain
+	prefix := ""
 	switch {
 	case markdownHeadingPattern.MatchString(trimmed):
 		kind = markdownLineHeading
 	case markdownBulletPattern.MatchString(line):
 		kind = markdownLineBullet
+	case markdownOrderedListPattern.MatchString(line):
+		kind = markdownLineOrdered
 	case isMarkdownTableLine(trimmed):
 		kind = markdownLineTable
 	case markdownQuotePattern.MatchString(trimmed):
@@ -351,7 +368,12 @@ func formatMarkdownLineWithKind(line string) (string, markdownLineKind) {
 	line = markdownQuotePattern.ReplaceAllString(line, "")
 	if matches := markdownBulletPattern.FindStringSubmatch(line); matches != nil {
 		rest := strings.TrimSpace(line[len(matches[0]):])
-		line = matches[1] + "• " + rest
+		prefix = matches[1] + "• "
+		line = prefix + rest
+	} else if matches := markdownOrderedListPattern.FindStringSubmatch(line); matches != nil {
+		rest := strings.TrimSpace(line[len(matches[0]):])
+		prefix = matches[1] + matches[2] + " "
+		line = prefix + rest
 	}
 	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
 	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
@@ -364,7 +386,7 @@ func formatMarkdownLineWithKind(line string) (string, markdownLineKind) {
 	line = strings.ReplaceAll(line, "__", "")
 	line = strings.ReplaceAll(line, "~~", "")
 	line = strings.ReplaceAll(line, "`", "")
-	return line, kind
+	return markdownLine{text: line, kind: kind, prefix: prefix}
 }
 
 func isMarkdownTableLine(line string) bool {
@@ -378,6 +400,8 @@ func styleMarkdownLine(line string, kind markdownLineKind) string {
 		return markdownHeadingStyle.Render(line)
 	case markdownLineBullet:
 		return styleBulletLine(line)
+	case markdownLineOrdered:
+		return styleOrderedLine(line)
 	case markdownLineTable:
 		return markdownTableStyle.Render(line)
 	case markdownLineQuote:
@@ -393,6 +417,39 @@ func styleBulletLine(line string) string {
 		return markdownBulletStyle.Render(line)
 	}
 	return line[:idx] + markdownBulletStyle.Render("•") + line[idx+len("•"):]
+}
+
+func styleOrderedLine(line string) string {
+	trimmed := strings.TrimLeft(line, " ")
+	prefixLen := len(line) - len(trimmed)
+	for i, r := range trimmed {
+		if r == ' ' {
+			number := trimmed[:i]
+			rest := trimmed[i:]
+			return line[:prefixLen] + markdownBulletStyle.Render(number) + rest
+		}
+	}
+	return line
+}
+
+func wrapWithPrefix(text, prefix string, width int) string {
+	rest := strings.TrimPrefix(text, prefix)
+	prefixWidth := utf8.RuneCountInString(prefix)
+	available := width - prefixWidth
+	if available < 10 {
+		available = 10
+	}
+	wrapped := wordwrap.String(rest, available)
+	lines := splitLinesPreserve(wrapped)
+	indent := strings.Repeat(" ", prefixWidth)
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = prefix + line
+		} else {
+			lines[i] = indent + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func previewText(value string, limit int) string {

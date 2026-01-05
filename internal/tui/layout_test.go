@@ -60,6 +60,15 @@ func TestFormatConversationEntryMarkdownBlocks(t *testing.T) {
 	}
 }
 
+func TestFormatConversationEntryNestedLists(t *testing.T) {
+	input := "1. First item\n  - sub bullet\n    - deep bullet"
+	got := stripANSI(formatConversationEntry(input, 80))
+	want := "1. First item\n  • sub bullet\n    • deep bullet"
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}
+
 func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
 	m := &model{
 		viewport: viewport.New(80, 20),

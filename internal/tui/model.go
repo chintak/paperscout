@@ -223,8 +223,8 @@ const (
 )
 
 var paletteCommands = []uiCommand{
-	{id: actionSummarize, title: "Summarize paper", description: "Regenerate the LLM reading brief for the loaded PDF", shortcut: "a"},
-	{id: actionAskQuestion, title: "Ask a question", description: "Open the Q&A prompt", shortcut: "q"},
+	{id: actionSummarize, title: "Summarize paper", description: "Regenerate the LLM reading brief for the loaded PDF"},
+	{id: actionAskQuestion, title: "Ask a question", description: "Open the Q&A prompt"},
 	{id: actionManualNote, title: "Add manual note", description: "Draft a manual note", shortcut: "m"},
 	{id: actionSaveNotes, title: "Save manual notes", description: "Persist any manual notes you drafted this session", shortcut: "s"},
 	{id: actionToggleHelp, title: "Toggle help overlay", description: "Show or hide the command cheatsheet", shortcut: "?"},
@@ -423,10 +423,6 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	handled := true
 	switch key.String() {
-	case "a":
-		return m, m.actionSummarizeCmd()
-	case "q":
-		return m, m.actionAskQuestionCmd()
 	case "m":
 		return m, m.actionManualNoteCmd()
 	case "g":
@@ -740,11 +736,7 @@ func (m *model) setComposerMode(mode composerMode, placeholder string, focus boo
 	if placeholder != "" {
 		m.composer.Placeholder = placeholder
 	}
-	if focus {
-		m.composer.Focus()
-	} else {
-		m.composer.Blur()
-	}
+	m.composer.Focus()
 }
 
 func (m *model) cancelComposerEntry() {
@@ -763,7 +755,8 @@ func (m *model) cancelComposerEntry() {
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
 		m.infoMessage = "Question canceled."
 	default:
-		m.blurComposer()
+		m.composer.SetValue("")
+		m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
 	}
 }
 
@@ -1565,6 +1558,9 @@ func (m *model) closeCommandPalette() {
 	m.paletteInput.SetValue("")
 	m.paletteMatches = nil
 	m.paletteCursor = 0
+	if target != stagePalette {
+		m.composer.Focus()
+	}
 }
 
 func (m *model) refreshPaletteMatches() {

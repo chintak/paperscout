@@ -52,8 +52,8 @@ func TestComposerEscCancelsNoteMode(t *testing.T) {
 		t.Fatal("esc should cancel manual note entry")
 	}
 
-	if m.composer.Focused() {
-		t.Fatal("composer should blur after canceling manual note")
+	if !m.composer.Focused() {
+		t.Fatal("composer should remain focused after canceling manual note")
 	}
 	if value := strings.TrimSpace(m.composer.Value()); value != "" {
 		t.Fatalf("composer value not cleared: %q", value)
@@ -80,8 +80,8 @@ func TestComposerEscCancelsQuestionMode(t *testing.T) {
 	if m.composerMode != composerModeNote {
 		t.Fatalf("composer should return to note mode, got %v", m.composerMode)
 	}
-	if m.composer.Focused() {
-		t.Fatal("composer should blur after canceling question entry")
+	if !m.composer.Focused() {
+		t.Fatal("composer should remain focused after canceling question entry")
 	}
 }
 

@@ -121,10 +121,17 @@ func (m *model) viewPalette() string {
 		b.WriteString(helperStyle.Render("No commands match this filter."))
 	} else {
 		for idx, cmd := range m.paletteMatches {
-			label := fmt.Sprintf("  %s  [%s]", cmd.title, cmd.shortcut)
+			label := fmt.Sprintf("  %s", cmd.title)
+			if cmd.shortcut != "" {
+				label = fmt.Sprintf("  %s  [%s]", cmd.title, cmd.shortcut)
+			}
 			desc := helperStyle.Render("   " + cmd.description)
 			if idx == m.paletteCursor {
-				label = currentLineStyle.Render("▸ " + cmd.title + "  [" + cmd.shortcut + "]")
+				if cmd.shortcut != "" {
+					label = currentLineStyle.Render("▸ " + cmd.title + "  [" + cmd.shortcut + "]")
+				} else {
+					label = currentLineStyle.Render("▸ " + cmd.title)
+				}
 				desc = helperStyle.Render("   " + cmd.description)
 			}
 			b.WriteString(label)
@@ -184,8 +191,6 @@ func (m *model) keyLegendView() string {
 	hints := []keyHint{
 		{"↑/↓", "Scroll"},
 		{"[/]", "Jump sections"},
-		{"a", "Regenerate brief"},
-		{"q", "Ask question"},
 		{"g/G", "Top or bottom"},
 		{"r", "Load new URL"},
 		{"?", "Toggle cheatsheet"},
@@ -213,8 +218,8 @@ func (m *model) helpView() string {
 	lines := []string{
 		sectionHeaderStyle.Render("Command Palette"),
 		helperStyle.Render("• use [ and ] to jump between Summary, Technical, and Deep Dive sections; g / G flies to the top or bottom."),
-		helperStyle.Render("• press a to regenerate the LLM reading brief and q to ask questions once OpenAI or Ollama is configured."),
 		helperStyle.Render("• press Ctrl+K to open the command palette, then type to filter actions and hit Enter to run them."),
+		helperStyle.Render("• use the palette to regenerate the LLM brief or ask questions once OpenAI or Ollama is configured."),
 		helperStyle.Render("• press r to paste a new URL, Ctrl+C to quit."),
 	}
 	return helpBoxStyle.Render(strings.Join(lines, "\n"))

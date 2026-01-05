@@ -388,11 +388,7 @@ func (m *model) viewportLineForMouse(msg tea.MouseMsg) (int, bool) {
 }
 
 func (m *model) viewportStartRow() int {
-	hero := m.heroView()
-	if strings.TrimSpace(hero) == "" {
-		return 0
-	}
-	return len(splitLinesPreserve(hero)) + 1
+	return 0
 }
 
 func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -650,7 +646,7 @@ func (m *model) refreshViewport() {
 	prevYOffset := m.viewport.YOffset
 	var view displayView
 	if m.paper == nil {
-		m.viewport.Height = m.layout.transcriptHeight
+		m.viewport.Height = m.layout.viewportHeight
 		view = m.buildIdleContent()
 	} else {
 		m.viewport.Height = m.layout.viewportHeight

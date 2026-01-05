@@ -41,8 +41,7 @@ func (m *model) viewDisplay() string {
 }
 
 func (m *model) renderStackedDisplay() string {
-	parts := []string{m.heroView()}
-	parts = append(parts, m.viewport.View())
+	parts := []string{m.viewport.View()}
 	if m.errorMessage != "" {
 		parts = append(parts, errorStyle.Render(m.errorMessage))
 	}

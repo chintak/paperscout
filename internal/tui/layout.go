@@ -116,11 +116,22 @@ func (cb *contentBuilder) Line() int {
 	return cb.lines
 }
 
+func (m *model) writeHero(cb *contentBuilder) {
+	hero := strings.TrimSpace(m.heroView())
+	if hero == "" {
+		return
+	}
+	cb.WriteString(hero)
+	cb.WriteRune('\n')
+	cb.WriteRune('\n')
+}
+
 func (m *model) buildDisplayContent() displayView {
 	cb := &contentBuilder{}
 	anchors := map[string]int{}
 	bulletWrap := m.wrapWidth(4)
 	suggestionLines := map[int]int{}
+	m.writeHero(cb)
 	m.writeConversationStream(cb)
 
 	renderBullets := func(items []string) {
@@ -204,6 +215,7 @@ func (m *model) buildDisplayContent() displayView {
 
 func (m *model) buildIdleContent() displayView {
 	cb := &contentBuilder{}
+	m.writeHero(cb)
 	cb.WriteString(sectionHeaderStyle.Render("Paste an arXiv URL in the Composer"))
 	cb.WriteRune('\n')
 	cb.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Alt+Enter to fetch metadata."))

@@ -2,13 +2,17 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/csheth/browse/internal/arxiv"
 	"github.com/csheth/browse/internal/llm"
+	"github.com/csheth/browse/internal/notes"
 )
 
 func TestComposerEscInURLModeKeepsFocus(t *testing.T) {
@@ -144,6 +148,65 @@ func TestComposerCtrlEnterStoresManualNote(t *testing.T) {
 	}
 	if got := m.manualNotes[0].Body; got != "Note body" {
 		t.Fatalf("note body mismatch, got %q", got)
+	}
+}
+
+func TestHydrateConversationHistoryLoadsSnapshot(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	now := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
+	snapshot := notes.ConversationSnapshot{
+		PaperID:    "1234",
+		PaperTitle: "Fixture",
+		CapturedAt: now,
+		Messages: []notes.ConversationMessage{
+			{Kind: "question", Content: "What is this?", Timestamp: now},
+		},
+		Notes: []notes.SnapshotNote{
+			{Title: "Note", Body: "Manual note", Kind: "manual", CreatedAt: now.Add(time.Minute)},
+		},
+		Brief: &notes.BriefSnapshot{
+			Summary: []string{"Summary bullet"},
+		},
+	}
+	if err := notes.SaveConversationSnapshots(path, []notes.ConversationSnapshot{snapshot}); err != nil {
+		t.Fatalf("SaveConversationSnapshots() error = %v", err)
+	}
+
+	m := newTestModel(t)
+	m.config.KnowledgeBasePath = path
+	m.paper = &arxiv.Paper{ID: "1234", Title: "Fixture"}
+	m.hydrateConversationHistory()
+
+	if len(m.transcriptEntries) != 2 {
+		t.Fatalf("expected 2 transcript entries, got %d", len(m.transcriptEntries))
+	}
+	if m.transcriptEntries[0].Kind != "question" {
+		t.Fatalf("expected first entry to be question, got %q", m.transcriptEntries[0].Kind)
+	}
+	if len(m.brief.Summary) != 1 || m.brief.Summary[0] != "Summary bullet" {
+		t.Fatalf("expected brief summary to load, got %#v", m.brief.Summary)
+	}
+}
+
+func TestHydrateConversationHistoryReportsInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	if err := os.WriteFile(path, []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	m := newTestModel(t)
+	m.config.KnowledgeBasePath = path
+	m.paper = &arxiv.Paper{ID: "1234", Title: "Fixture"}
+	m.hydrateConversationHistory()
+
+	if m.errorMessage == "" {
+		t.Fatal("expected knowledge base error message")
 	}
 }
 

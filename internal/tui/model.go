@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -548,6 +549,62 @@ func (m *model) refreshPersistedState() {
 		}
 	}
 	m.markViewportDirty()
+}
+
+func (m *model) hydrateConversationHistory() {
+	m.transcriptEntries = nil
+	if m.paper == nil || m.config.KnowledgeBasePath == "" {
+		return
+	}
+	snapshots, err := notes.LoadConversationSnapshots(m.config.KnowledgeBasePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		m.errorMessage = fmt.Sprintf("knowledge base error: %v", err)
+		return
+	}
+	var snapshot *notes.ConversationSnapshot
+	for i := range snapshots {
+		if snapshots[i].PaperID == m.paper.ID {
+			snapshot = &snapshots[i]
+			break
+		}
+	}
+	if snapshot == nil {
+		return
+	}
+	if snapshot.Brief != nil {
+		m.brief = llm.ReadingBrief{
+			Summary:   append([]string(nil), snapshot.Brief.Summary...),
+			Technical: append([]string(nil), snapshot.Brief.Technical...),
+			DeepDive:  append([]string(nil), snapshot.Brief.DeepDive...),
+		}
+	}
+	entries := make([]transcriptEntry, 0, len(snapshot.Messages)+len(snapshot.Notes))
+	for _, msg := range snapshot.Messages {
+		entries = append(entries, transcriptEntry{
+			Kind:      msg.Kind,
+			Content:   msg.Content,
+			Timestamp: msg.Timestamp,
+		})
+	}
+	for _, note := range snapshot.Notes {
+		content := strings.TrimSpace(note.Body)
+		if content == "" {
+			content = note.Title
+		}
+		entries = append(entries, transcriptEntry{
+			Kind:      "note",
+			Content:   content,
+			Timestamp: note.CreatedAt,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Timestamp.Before(entries[j].Timestamp)
+	})
+	m.transcriptEntries = entries
+	m.markTranscriptDirty()
 }
 
 func (m *model) markViewportDirty() {
@@ -1741,6 +1798,7 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.clearSearch()
 	m.errorMessage = ""
 	m.infoMessage = fmt.Sprintf("Loaded %s. Generating reading brief…", m.paper.Title)
+	m.hydrateConversationHistory()
 	m.refreshPersistedState()
 	m.markViewportDirty()
 	m.composer.SetValue("")

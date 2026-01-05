@@ -118,6 +118,8 @@ func (m *model) buildDisplayContent() displayView {
 			renderBullets(fallback)
 		}
 		switch {
+		case len(items) > 0:
+			renderBullets(items)
 		case m.config.LLM == nil:
 			cb.WriteString(helperStyle.Render("Connect OpenAI or Ollama (flags or env) to unlock this section."))
 			cb.WriteRune('\n')
@@ -130,8 +132,6 @@ func (m *model) buildDisplayContent() displayView {
 			cb.WriteString(errorStyle.Render(state.Error))
 			cb.WriteRune('\n')
 			renderFallback()
-		case len(items) > 0:
-			renderBullets(items)
 		case len(fallback) > 0:
 			renderFallback()
 		default:

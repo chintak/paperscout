@@ -71,7 +71,7 @@ func (m *model) footerView() string {
 }
 
 func (m *model) composerHelpText() string {
-	return "Enter: load/ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear"
+	return "Enter: load/ask • Ctrl+Enter: note • Alt+Enter: URL • Esc: clear"
 }
 
 func (m *model) footerTickerView() string {

@@ -497,7 +497,7 @@ func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
 	case isCtrlEnter(key):
 		m.composerMode = composerModeNote
 		return m.submitComposer(), true
-	case isShiftEnter(key):
+	case isAltEnter(key):
 		m.composerMode = composerModeURL
 		return m.submitComposer(), true
 	case key.Type == tea.KeyEnter:
@@ -876,13 +876,8 @@ func isCtrlEnter(key tea.KeyMsg) bool {
 	}
 }
 
-func isShiftEnter(key tea.KeyMsg) bool {
-	switch key.String() {
-	case "shift+enter", "alt+enter":
-		return true
-	default:
-		return false
-	}
+func isAltEnter(key tea.KeyMsg) bool {
+	return key.Type == tea.KeyEnter && key.Alt
 }
 
 func (m *model) jumpToRelativeSection(delta int) {

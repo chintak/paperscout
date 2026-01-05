@@ -85,13 +85,13 @@ func TestComposerEscCancelsQuestionMode(t *testing.T) {
 	}
 }
 
-func TestComposerShiftEnterSubmitsURL(t *testing.T) {
+func TestComposerAltEnterSubmitsURL(t *testing.T) {
 	m := newTestModel(t)
 	m.composer.SetValue("https://arxiv.org/abs/1234.5678")
 
 	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	if !handled {
-		t.Fatal("shift+enter should submit URL entries")
+		t.Fatal("alt+enter should submit URL entries")
 	}
 	if cmd == nil {
 		t.Fatal("submit should return a command to start fetch job")

@@ -43,3 +43,12 @@ func TestFormatConversationEntryMarkdown(t *testing.T) {
 		t.Fatalf("formatted output mismatch:\n%s", got)
 	}
 }
+
+func TestFormatConversationEntryMarkdownBlocks(t *testing.T) {
+	input := "### **Title**\n> quoted line\n`inline` and ~~strike~~\n| Col | Val |\n```go\nfunc main() {}\n```"
+	got := formatConversationEntry(input, 20)
+	want := "Title\nquoted line\ninline and strike\n| Col | Val |\nfunc main() {}"
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}

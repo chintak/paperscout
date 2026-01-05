@@ -21,6 +21,7 @@ var (
 	markdownCodeFencePattern      = regexp.MustCompile("^\\s*```")
 	markdownInlineCodePattern     = regexp.MustCompile("`([^`]+)`")
 	markdownQuotePattern          = regexp.MustCompile(`^\s*>\s+`)
+	markdownStrikethroughPattern  = regexp.MustCompile(`~~([^~]+)~~`)
 )
 
 type pageLayout struct {
@@ -317,10 +318,15 @@ func formatMarkdownLine(line string) string {
 	}
 	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
 	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
+	line = markdownStrikethroughPattern.ReplaceAllString(line, "$1")
 	line = markdownBoldPattern.ReplaceAllString(line, "$1")
 	line = markdownBoldUnderscorePattern.ReplaceAllString(line, "$1")
 	line = markdownItalicPattern.ReplaceAllString(line, "$1")
 	line = markdownItalicUnderscore.ReplaceAllString(line, "$1")
+	line = strings.ReplaceAll(line, "**", "")
+	line = strings.ReplaceAll(line, "__", "")
+	line = strings.ReplaceAll(line, "~~", "")
+	line = strings.ReplaceAll(line, "`", "")
 	return line
 }
 

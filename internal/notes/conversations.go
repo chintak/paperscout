@@ -15,6 +15,12 @@ type ConversationSnapshot struct {
 	LLM             *LLMMetadata           `json:"llm,omitempty"`
 }
 
+// SnapshotUpdate appends new messages or notes to an existing snapshot.
+type SnapshotUpdate struct {
+	Messages []ConversationMessage `json:"messages,omitempty"`
+	Notes    []SnapshotNote        `json:"notes,omitempty"`
+}
+
 // ConversationMessage records one transcript entry or user message.
 type ConversationMessage struct {
 	Kind      string    `json:"kind"`

@@ -75,6 +75,26 @@ func ensureConversationSnapshotJob(path string, paper *arxiv.Paper) jobRunner {
 	}
 }
 
+func appendConversationSnapshotJob(path string, paper *arxiv.Paper, update notes.SnapshotUpdate) jobRunner {
+	paperID := paper.ID
+	title := paper.Title
+	messages := append([]notes.ConversationMessage(nil), update.Messages...)
+	notesUpdate := append([]notes.SnapshotNote(nil), update.Notes...)
+	updateCopy := notes.SnapshotUpdate{Messages: messages, Notes: notesUpdate}
+	return func(parent context.Context) (tea.Msg, error) {
+		if path == "" || paperID == "" {
+			return nil, nil
+		}
+		if len(updateCopy.Messages) == 0 && len(updateCopy.Notes) == 0 {
+			return nil, nil
+		}
+		if err := notes.AppendConversationSnapshot(path, paperID, title, updateCopy); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+}
+
 func briefSectionJob(kind llm.BriefSectionKind, contextText string, client llm.Client, paper *arxiv.Paper, streamCtx context.Context) (jobRunner, <-chan llm.BriefSectionDelta) {
 	title := paper.Title
 	paperID := paper.ID

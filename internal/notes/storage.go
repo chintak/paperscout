@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -48,6 +49,76 @@ func SaveConversationSnapshots(path string, snapshots []ConversationSnapshot) er
 		entries = append(entries, raw)
 	}
 	return appendEntries(path, entries)
+}
+
+// AppendConversationSnapshot appends messages or notes to a per-paper snapshot.
+func AppendConversationSnapshot(path, paperID, paperTitle string, update SnapshotUpdate) error {
+	if path == "" || paperID == "" {
+		return nil
+	}
+	if len(update.Messages) == 0 && len(update.Notes) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	entries, err := loadEntries(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		entries = nil
+	}
+	updated := false
+	capturedAt := time.Now()
+	for i, raw := range entries {
+		entryType, err := detectEntryType(raw)
+		if err != nil {
+			return err
+		}
+		if entryType != entryTypeConversation {
+			continue
+		}
+		var snapshot ConversationSnapshot
+		if err := json.Unmarshal(raw, &snapshot); err != nil {
+			return err
+		}
+		if snapshot.PaperID != paperID {
+			continue
+		}
+		snapshot.EntryType = entryTypeConversation
+		if snapshot.PaperTitle == "" {
+			snapshot.PaperTitle = paperTitle
+		}
+		if snapshot.CapturedAt.IsZero() {
+			snapshot.CapturedAt = capturedAt
+		}
+		snapshot.Messages = append(snapshot.Messages, update.Messages...)
+		snapshot.Notes = append(snapshot.Notes, update.Notes...)
+		raw, err = json.Marshal(snapshot)
+		if err != nil {
+			return err
+		}
+		entries[i] = raw
+		updated = true
+		break
+	}
+	if !updated {
+		snapshot := ConversationSnapshot{
+			EntryType:  entryTypeConversation,
+			PaperID:    paperID,
+			PaperTitle: paperTitle,
+			CapturedAt: capturedAt,
+			Messages:   update.Messages,
+			Notes:      update.Notes,
+		}
+		raw, err := json.Marshal(snapshot)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, raw)
+	}
+	return writeEntries(path, entries)
 }
 
 // Load returns all stored notes from the knowledge base.

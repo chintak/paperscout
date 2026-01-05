@@ -847,20 +847,32 @@ func (m *model) submitComposer() tea.Cmd {
 			m.infoMessage = "Load a paper before drafting notes."
 			return nil
 		}
+		createdAt := time.Now()
+		title := trimmedTitle(value)
 		m.manualNotes = append(m.manualNotes, notes.Note{
 			PaperID:    m.paper.ID,
 			PaperTitle: m.paper.Title,
-			Title:      trimmedTitle(value),
+			Title:      title,
 			Body:       value,
 			Kind:       "manual",
-			CreatedAt:  time.Now(),
+			CreatedAt:  createdAt,
 		})
 		m.infoMessage = fmt.Sprintf("Manual note added (%d total).", len(m.manualNotes))
 		m.markViewportDirty()
 		m.appendTranscript("note", previewText(value, transcriptPreviewLimit))
 		m.composer.SetValue("")
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
-		return nil
+		snapshotCmd := m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
+			Notes: []notes.SnapshotNote{
+				{
+					Title:     title,
+					Body:      value,
+					Kind:      "manual",
+					CreatedAt: createdAt,
+				},
+			},
+		})
+		return snapshotCmd
 	case composerModeQuestion:
 		if m.paper == nil {
 			m.infoMessage = "Load a paper before asking questions."
@@ -870,10 +882,11 @@ func (m *model) submitComposer() tea.Cmd {
 			m.infoMessage = "Configure OpenAI or Ollama to unlock questions."
 			return nil
 		}
+		askedAt := time.Now()
 		entry := qaExchange{
 			Question: value,
 			Pending:  true,
-			AskedAt:  time.Now(),
+			AskedAt:  askedAt,
 		}
 		m.qaHistory = append(m.qaHistory, entry)
 		m.appendTranscript("question", value)
@@ -883,7 +896,20 @@ func (m *model) submitComposer() tea.Cmd {
 		idx := len(m.qaHistory) - 1
 		m.composer.SetValue("")
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
-		return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindQuestion, questionAnswerJob(idx, m.config.LLM, m.paper, value)))
+		snapshotCmd := m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
+			Messages: []notes.ConversationMessage{
+				{
+					Kind:      "question",
+					Content:   value,
+					Timestamp: askedAt,
+				},
+			},
+		})
+		cmds := []tea.Cmd{m.spinner.Tick, m.jobBus.Start(jobKindQuestion, questionAnswerJob(idx, m.config.LLM, m.paper, value))}
+		if snapshotCmd != nil {
+			cmds = append(cmds, snapshotCmd)
+		}
+		return tea.Batch(cmds...)
 	default:
 		m.infoMessage = "Composer inactive. Press m or q to begin."
 		return nil
@@ -1666,6 +1692,16 @@ func (m *model) ensureConversationSnapshotCmd() tea.Cmd {
 	return m.jobBus.Start(jobKindZettel, ensureConversationSnapshotJob(m.config.KnowledgeBasePath, m.paper))
 }
 
+func (m *model) appendConversationSnapshotCmd(update notes.SnapshotUpdate) tea.Cmd {
+	if m.paper == nil || m.config.KnowledgeBasePath == "" {
+		return nil
+	}
+	if len(update.Messages) == 0 && len(update.Notes) == 0 {
+		return nil
+	}
+	return m.jobBus.Start(jobKindZettel, appendConversationSnapshotJob(m.config.KnowledgeBasePath, m.paper, update))
+}
+
 func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	if msg.err != nil {
 		m.stage = stageInput
@@ -1794,6 +1830,7 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 		return nil
 	}
 	m.questionLoading = false
+	var snapshotCmd tea.Cmd
 	if msg.index >= 0 && msg.index < len(m.qaHistory) {
 		entry := &m.qaHistory[msg.index]
 		entry.Pending = false
@@ -1809,10 +1846,19 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 			m.errorMessage = ""
 			m.infoMessage = "Answer stored. Ask another with q."
 			m.appendTranscript("answer", previewText(msg.answer, transcriptPreviewLimit))
+			snapshotCmd = m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
+				Messages: []notes.ConversationMessage{
+					{
+						Kind:      "answer",
+						Content:   msg.answer,
+						Timestamp: time.Now(),
+					},
+				},
+			})
 		}
 	}
 	m.markViewportDirty()
-	return nil
+	return snapshotCmd
 }
 
 func (m *model) handleSuggestionResult(msg suggestionResultMsg) tea.Cmd {

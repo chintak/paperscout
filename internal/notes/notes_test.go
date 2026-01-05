@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -137,5 +138,66 @@ func TestSavePreservesConversationSnapshots(t *testing.T) {
 	}
 	if len(notes) != 1 || notes[0].Title != "Contribution #1" {
 		t.Fatalf("unexpected notes payload: %#v", notes)
+	}
+}
+
+func TestAppendConversationSnapshotAppendsUpdates(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	now := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
+
+	update := SnapshotUpdate{
+		Messages: []ConversationMessage{
+			{Kind: "question", Content: "What is this about?", Timestamp: now},
+		},
+	}
+	if err := AppendConversationSnapshot(path, "paper-1", "Title", update); err != nil {
+		t.Fatalf("AppendConversationSnapshot() error = %v", err)
+	}
+
+	snapshots, err := LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 || len(snapshots[0].Messages) != 1 {
+		t.Fatalf("unexpected snapshots payload: %#v", snapshots)
+	}
+
+	notesUpdate := SnapshotUpdate{
+		Notes: []SnapshotNote{
+			{Title: "Note", Body: "Manual note", Kind: "manual", CreatedAt: now},
+		},
+	}
+	if err := AppendConversationSnapshot(path, "paper-1", "Title", notesUpdate); err != nil {
+		t.Fatalf("AppendConversationSnapshot() error = %v", err)
+	}
+
+	snapshots, err = LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 || len(snapshots[0].Notes) != 1 {
+		t.Fatalf("unexpected snapshots payload: %#v", snapshots)
+	}
+}
+
+func TestAppendConversationSnapshotRejectsInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	if err := os.WriteFile(path, []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	update := SnapshotUpdate{
+		Messages: []ConversationMessage{
+			{Kind: "question", Content: "What is this about?", Timestamp: time.Now()},
+		},
+	}
+	if err := AppendConversationSnapshot(path, "paper-1", "Title", update); err == nil {
+		t.Fatal("expected error for invalid JSON")
 	}
 }

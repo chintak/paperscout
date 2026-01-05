@@ -68,11 +68,7 @@ func (m *model) renderStackedDisplay() string {
 }
 
 func (m *model) composerPanel() string {
-	return joinNonEmpty([]string{
-		sectionHeaderStyle.Render("Composer"),
-		m.composer.View(),
-		helperStyle.Render(m.composerHelpText()),
-	})
+	return m.composer.View()
 }
 
 func (m *model) footerView() string {

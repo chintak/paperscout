@@ -49,9 +49,9 @@ func New(config Config) tea.Model {
 	composer.Placeholder = composerNotePlaceholder
 	composer.CharLimit = 2000
 	composer.SetWidth(80)
-	composer.SetHeight(4)
+	composer.SetHeight(1)
 	composer.ShowLineNumbers = false
-	composer.Prompt = ""
+	composer.Prompt = "> "
 	composer.EndOfBufferCharacter = ' '
 	composer.FocusedStyle.Base = composerFocusedBaseStyle
 	composer.FocusedStyle.CursorLine = composerCursorLineFocusedStyle
@@ -341,6 +341,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.transcriptViewport.Width = m.layout.viewportWidth
 		m.transcriptViewport.Height = m.layout.transcriptHeight
 		composerWidth := m.layout.windowWidth - viewportHorizontalPadding
+		if composerWidth > 72 {
+			composerWidth = 72
+		}
 		if composerWidth < minViewportWidth {
 			composerWidth = minViewportWidth
 		}
@@ -922,7 +925,7 @@ func (m *model) submitComposer() tea.Cmd {
 		})
 		m.infoMessage = fmt.Sprintf("Manual note added (%d total).", len(m.manualNotes))
 		m.markViewportDirty()
-		m.appendTranscript("note", previewText(value, transcriptPreviewLimit))
+		m.appendTranscript("note", value)
 		m.composer.SetValue("")
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
 		snapshotCmd := m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
@@ -1936,7 +1939,7 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 			entry.Error = ""
 			m.errorMessage = ""
 			m.infoMessage = "Answer stored. Ask another with q."
-			m.appendTranscript("answer", previewText(msg.answer, transcriptPreviewLimit))
+			m.appendTranscript("answer", msg.answer)
 			snapshotCmd = m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
 				Messages: []notes.ConversationMessage{
 					{

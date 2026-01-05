@@ -14,15 +14,9 @@ Enter asks a question; Ctrl+Enter saves a note. Esc clears the composer.
 Conversation Stream
 Interactions will appear here once you load a paper.
 
+
 Paste an arXiv url or identifier to begin.
 
-Composer
-
-Paste an arXiv URL or identifier (Shift+Enter to load)…
-
-
-
-
-Enter: ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear
+> Paste an arXiv URL or identifier (Shift+Enter to load)…
 
  Enter: ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear

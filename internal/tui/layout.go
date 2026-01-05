@@ -35,10 +35,7 @@ func (l *pageLayout) Update(width, height int) {
 		innerWidth = minViewportWidth
 	}
 	l.viewportWidth = innerWidth
-	l.composerHeight = 4
-	if height < 24 {
-		l.composerHeight = 3
-	}
+	l.composerHeight = 1
 	const chrome = 8
 	const footerStatusHeight = 1
 	usable := height - chrome - l.composerHeight
@@ -67,6 +64,32 @@ type contentBuilder struct {
 	lines   int
 }
 
+func (m *model) writeConversationStream(cb *contentBuilder) {
+	cb.WriteString(sectionHeaderStyle.Render("Conversation Stream"))
+	cb.WriteRune('\n')
+	if len(m.transcriptEntries) == 0 {
+		cb.WriteString(helperStyle.Render("Interactions will appear here once you load a paper."))
+		cb.WriteRune('\n')
+		return
+	}
+	wrap := m.wrapWidth(4)
+	for idx, entry := range m.transcriptEntries {
+		label := transcriptLabel(entry.Kind)
+		if label != "" {
+			cb.WriteString(helperStyle.Render(label))
+			cb.WriteRune('\n')
+		}
+		body := wordwrap.String(entry.Content, wrap)
+		cb.WriteString(indentMultiline(body, "  "))
+		if idx < len(m.transcriptEntries)-1 {
+			cb.WriteRune('\n')
+			cb.WriteRune('\n')
+		} else {
+			cb.WriteRune('\n')
+		}
+	}
+}
+
 func (cb *contentBuilder) WriteString(s string) {
 	cb.builder.WriteString(s)
 	cb.lines += strings.Count(s, "\n")
@@ -92,6 +115,7 @@ func (m *model) buildDisplayContent() displayView {
 	anchors := map[string]int{}
 	bulletWrap := m.wrapWidth(4)
 	suggestionLines := map[int]int{}
+	m.writeConversationStream(cb)
 
 	renderBullets := func(items []string) {
 		for _, item := range items {
@@ -181,10 +205,7 @@ func (m *model) buildIdleContent() displayView {
 	cb.WriteString(helperStyle.Render("Enter asks a question; Ctrl+Enter saves a note. Esc clears the composer."))
 	cb.WriteRune('\n')
 	cb.WriteRune('\n')
-	cb.WriteString(sectionHeaderStyle.Render("Conversation Stream"))
-	cb.WriteRune('\n')
-	cb.WriteString(helperStyle.Render("Interactions will appear here once you load a paper."))
-	cb.WriteRune('\n')
+	m.writeConversationStream(cb)
 
 	return displayView{
 		content:         cb.String(),
@@ -341,5 +362,24 @@ func sectionLabel(anchor string) string {
 		return "Deep Dive References"
 	default:
 		return "section"
+	}
+}
+
+func transcriptLabel(kind string) string {
+	switch kind {
+	case "question":
+		return "You"
+	case "note":
+		return "You (note)"
+	case "answer":
+		return "Scout"
+	case "brief":
+		return "Scout (brief)"
+	case "paper", "fetch", "save":
+		return "System"
+	case "error":
+		return "Error"
+	default:
+		return kind
 	}
 }

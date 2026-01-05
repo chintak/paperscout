@@ -330,6 +330,8 @@ func transcriptLabel(kind string) string {
 		return "You (note)"
 	case "answer":
 		return "Scout"
+	case "answer_draft":
+		return "Scout (draft)"
 	case "brief":
 		return "Scout (brief)"
 	case "paper", "fetch", "save":

@@ -33,11 +33,12 @@ const (
 )
 
 type qaExchange struct {
-	Question string
-	Answer   string
-	Error    string
-	Pending  bool
-	AskedAt  time.Time
+	Question        string
+	Answer          string
+	Error           string
+	Pending         bool
+	AskedAt         time.Time
+	TranscriptIndex int
 }
 
 type composerMode int

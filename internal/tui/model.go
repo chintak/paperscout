@@ -821,15 +821,21 @@ func (m *model) submitComposer() tea.Cmd {
 		}
 		askedAt := time.Now()
 		entry := qaExchange{
-			Question: value,
-			Pending:  true,
-			AskedAt:  askedAt,
+			Question:        value,
+			Pending:         true,
+			AskedAt:         askedAt,
+			TranscriptIndex: -1,
+		}
+		m.appendTranscript("question", value)
+		if draft := draftAnswerForQuestion(m.paper); draft != "" {
+			entry.Answer = draft
+			entry.TranscriptIndex = m.appendTranscriptEntry("answer_draft", draft)
+			m.infoMessage = "Draft response ready; refining via LLM…"
+		} else {
+			m.infoMessage = "Answering question via LLM…"
 		}
 		m.qaHistory = append(m.qaHistory, entry)
-		m.appendTranscript("question", value)
 		m.questionLoading = true
-		m.infoMessage = "Answering question via LLM…"
-		m.markViewportDirty()
 		idx := len(m.qaHistory) - 1
 		m.composer.SetValue("")
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
@@ -1189,6 +1195,26 @@ func (m *model) fallbackForSection(kind llm.BriefSectionKind) []string {
 	return m.briefFallbacks[kind]
 }
 
+func draftAnswerForQuestion(paper *arxiv.Paper) string {
+	if paper == nil {
+		return ""
+	}
+	if summary := fallbackSummaryBullets(paper.Abstract); len(summary) > 0 {
+		if len(summary) > 2 {
+			summary = summary[:2]
+		}
+		return strings.Join(summary, " ")
+	}
+	if len(paper.KeyContributions) > 0 {
+		limit := 2
+		if len(paper.KeyContributions) < limit {
+			limit = len(paper.KeyContributions)
+		}
+		return strings.Join(paper.KeyContributions[:limit], " ")
+	}
+	return ""
+}
+
 func fallbackSummaryBullets(abstract string) []string {
 	sentences := abstractSentences(abstract)
 	var bullets []string
@@ -1507,6 +1533,10 @@ func (m *model) runCommand(id actionID) tea.Cmd {
 }
 
 func (m *model) appendTranscript(kind, content string) {
+	m.appendTranscriptEntry(kind, content)
+}
+
+func (m *model) appendTranscriptEntry(kind, content string) int {
 	entry := transcriptEntry{
 		Kind:      kind,
 		Content:   content,
@@ -1515,6 +1545,7 @@ func (m *model) appendTranscript(kind, content string) {
 	m.transcriptEntries = append(m.transcriptEntries, entry)
 	m.markTranscriptDirty()
 	m.markViewportDirty()
+	return len(m.transcriptEntries) - 1
 }
 
 func (m *model) openCommandPalette() {
@@ -1744,16 +1775,28 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 		entry.Pending = false
 		if msg.err != nil {
 			entry.Error = msg.err.Error()
-			entry.Answer = ""
 			m.errorMessage = entry.Error
-			m.infoMessage = "Question failed. Press q to retry."
+			if entry.Answer != "" {
+				m.infoMessage = "Question failed; draft may be incomplete."
+			} else {
+				m.infoMessage = "Question failed. Press q to retry."
+			}
 			m.appendTranscript("error", fmt.Sprintf("Question failed: %v", msg.err))
 		} else {
 			entry.Answer = msg.answer
 			entry.Error = ""
 			m.errorMessage = ""
-			m.infoMessage = "Answer stored. Ask another with q."
-			m.appendTranscript("answer", msg.answer)
+			m.infoMessage = "Answer refined. Ask another with q."
+			if entry.TranscriptIndex >= 0 && entry.TranscriptIndex < len(m.transcriptEntries) {
+				transcript := &m.transcriptEntries[entry.TranscriptIndex]
+				transcript.Kind = "answer"
+				transcript.Content = msg.answer
+				transcript.Timestamp = time.Now()
+				m.markTranscriptDirty()
+				m.markViewportDirty()
+			} else {
+				m.appendTranscript("answer", msg.answer)
+			}
 			snapshotCmd = m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
 				Messages: []notes.ConversationMessage{
 					{

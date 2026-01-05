@@ -128,6 +128,82 @@ func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	}
 }
 
+func TestQuestionDraftUpdatedWithRefinedAnswer(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{
+		ID:       "1234.56789",
+		Title:    "Fixture",
+		Abstract: "Sentence one. Sentence two.",
+	}
+	m.config.LLM = fakeLLM{}
+	m.composer.SetValue("What is the evaluation metric?")
+
+	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {
+		t.Fatal("enter should submit question entries")
+	}
+	if len(m.transcriptEntries) != 2 {
+		t.Fatalf("expected 2 transcript entries, got %d", len(m.transcriptEntries))
+	}
+	draft := draftAnswerForQuestion(m.paper)
+	if draft == "" {
+		t.Fatal("expected non-empty draft response")
+	}
+	entry := m.qaHistory[0]
+	if entry.TranscriptIndex < 0 || entry.TranscriptIndex >= len(m.transcriptEntries) {
+		t.Fatalf("draft index out of range: %d", entry.TranscriptIndex)
+	}
+	draftEntry := m.transcriptEntries[entry.TranscriptIndex]
+	if draftEntry.Kind != "answer_draft" || draftEntry.Content != draft {
+		t.Fatalf("draft entry mismatch: %+v", draftEntry)
+	}
+
+	m.handleQuestionResult(questionResultMsg{
+		paperID: m.paper.ID,
+		index:   0,
+		answer:  "Refined answer",
+	})
+	if len(m.transcriptEntries) != 2 {
+		t.Fatalf("expected draft to be updated in place, got %d entries", len(m.transcriptEntries))
+	}
+	refined := m.transcriptEntries[entry.TranscriptIndex]
+	if refined.Kind != "answer" || refined.Content != "Refined answer" {
+		t.Fatalf("refined entry mismatch: %+v", refined)
+	}
+}
+
+func TestQuestionDraftPreservedOnError(t *testing.T) {
+	m := newTestModel(t)
+	m.paper = &arxiv.Paper{
+		ID:       "1234.56789",
+		Title:    "Fixture",
+		Abstract: "Sentence one. Sentence two.",
+	}
+	m.config.LLM = fakeLLM{}
+	m.composer.SetValue("What is the evaluation metric?")
+
+	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {
+		t.Fatal("enter should submit question entries")
+	}
+	draft := draftAnswerForQuestion(m.paper)
+	entry := m.qaHistory[0]
+
+	m.handleQuestionResult(questionResultMsg{
+		paperID: m.paper.ID,
+		index:   0,
+		err:     errors.New("llm down"),
+	})
+	if len(m.transcriptEntries) != 3 {
+		t.Fatalf("expected error transcript append, got %d entries", len(m.transcriptEntries))
+	}
+	unchanged := m.transcriptEntries[entry.TranscriptIndex]
+	if unchanged.Kind != "answer_draft" || unchanged.Content != draft {
+		t.Fatalf("draft entry should remain on error: %+v", unchanged)
+	}
+	if m.errorMessage == "" {
+		t.Fatal("expected error message on failure")
+	}
+}
+
 func TestComposerCtrlEnterStoresManualNote(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}

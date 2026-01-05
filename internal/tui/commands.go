@@ -80,7 +80,21 @@ func appendConversationSnapshotJob(path string, paper *arxiv.Paper, update notes
 	title := paper.Title
 	messages := append([]notes.ConversationMessage(nil), update.Messages...)
 	notesUpdate := append([]notes.SnapshotNote(nil), update.Notes...)
-	updateCopy := notes.SnapshotUpdate{Messages: messages, Notes: notesUpdate}
+	var briefCopy *notes.BriefSnapshot
+	if update.Brief != nil {
+		copy := *update.Brief
+		copy.Summary = append([]string(nil), update.Brief.Summary...)
+		copy.Technical = append([]string(nil), update.Brief.Technical...)
+		copy.DeepDive = append([]string(nil), update.Brief.DeepDive...)
+		briefCopy = &copy
+	}
+	metadata := append([]notes.BriefSectionMetadata(nil), update.SectionMetadata...)
+	updateCopy := notes.SnapshotUpdate{
+		Messages:        messages,
+		Notes:           notesUpdate,
+		Brief:           briefCopy,
+		SectionMetadata: metadata,
+	}
 	return func(parent context.Context) (tea.Msg, error) {
 		if path == "" || paperID == "" {
 			return nil, nil

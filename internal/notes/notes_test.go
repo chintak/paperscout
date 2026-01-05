@@ -181,6 +181,29 @@ func TestAppendConversationSnapshotAppendsUpdates(t *testing.T) {
 	if len(snapshots) != 1 || len(snapshots[0].Notes) != 1 {
 		t.Fatalf("unexpected snapshots payload: %#v", snapshots)
 	}
+
+	briefUpdate := SnapshotUpdate{
+		Brief: &BriefSnapshot{
+			Summary: []string{"Summary bullet"},
+		},
+		SectionMetadata: []BriefSectionMetadata{
+			{Kind: "summary", Status: "completed"},
+		},
+	}
+	if err := AppendConversationSnapshot(path, "paper-1", "Title", briefUpdate); err != nil {
+		t.Fatalf("AppendConversationSnapshot() error = %v", err)
+	}
+
+	snapshots, err = LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 || snapshots[0].Brief == nil || len(snapshots[0].Brief.Summary) != 1 {
+		t.Fatalf("unexpected snapshots payload: %#v", snapshots)
+	}
+	if len(snapshots[0].SectionMetadata) != 1 || snapshots[0].SectionMetadata[0].Kind != "summary" {
+		t.Fatalf("unexpected section metadata: %#v", snapshots[0].SectionMetadata)
+	}
 }
 
 func TestAppendConversationSnapshotRejectsInvalidJSON(t *testing.T) {

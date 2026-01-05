@@ -56,7 +56,7 @@ func AppendConversationSnapshot(path, paperID, paperTitle string, update Snapsho
 	if path == "" || paperID == "" {
 		return nil
 	}
-	if len(update.Messages) == 0 && len(update.Notes) == 0 {
+	if len(update.Messages) == 0 && len(update.Notes) == 0 && update.Brief == nil && len(update.SectionMetadata) == 0 {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -95,6 +95,23 @@ func AppendConversationSnapshot(path, paperID, paperTitle string, update Snapsho
 		}
 		snapshot.Messages = append(snapshot.Messages, update.Messages...)
 		snapshot.Notes = append(snapshot.Notes, update.Notes...)
+		if update.Brief != nil {
+			if snapshot.Brief == nil {
+				snapshot.Brief = &BriefSnapshot{}
+			}
+			if update.Brief.Summary != nil {
+				snapshot.Brief.Summary = append([]string(nil), update.Brief.Summary...)
+			}
+			if update.Brief.Technical != nil {
+				snapshot.Brief.Technical = append([]string(nil), update.Brief.Technical...)
+			}
+			if update.Brief.DeepDive != nil {
+				snapshot.Brief.DeepDive = append([]string(nil), update.Brief.DeepDive...)
+			}
+		}
+		if len(update.SectionMetadata) > 0 {
+			snapshot.SectionMetadata = mergeSectionMetadata(snapshot.SectionMetadata, update.SectionMetadata)
+		}
 		raw, err = json.Marshal(snapshot)
 		if err != nil {
 			return err
@@ -104,6 +121,7 @@ func AppendConversationSnapshot(path, paperID, paperTitle string, update Snapsho
 		break
 	}
 	if !updated {
+		brief := copyBriefSnapshot(update.Brief)
 		snapshot := ConversationSnapshot{
 			EntryType:  entryTypeConversation,
 			PaperID:    paperID,
@@ -111,6 +129,9 @@ func AppendConversationSnapshot(path, paperID, paperTitle string, update Snapsho
 			CapturedAt: capturedAt,
 			Messages:   update.Messages,
 			Notes:      update.Notes,
+			Brief:      brief,
+			SectionMetadata: append([]BriefSectionMetadata(nil),
+				update.SectionMetadata...),
 		}
 		raw, err := json.Marshal(snapshot)
 		if err != nil {
@@ -224,4 +245,40 @@ func detectEntryType(raw json.RawMessage) (string, error) {
 		return entryTypeNote, nil
 	}
 	return header.EntryType, nil
+}
+
+func mergeSectionMetadata(existing, updates []BriefSectionMetadata) []BriefSectionMetadata {
+	if len(updates) == 0 {
+		return existing
+	}
+	result := append([]BriefSectionMetadata(nil), existing...)
+	for _, update := range updates {
+		if update.Kind == "" {
+			continue
+		}
+		replaced := false
+		for i := range result {
+			if result[i].Kind == update.Kind {
+				result[i] = update
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			result = append(result, update)
+		}
+	}
+	return result
+}
+
+func copyBriefSnapshot(source *BriefSnapshot) *BriefSnapshot {
+	if source == nil {
+		return nil
+	}
+	copy := BriefSnapshot{
+		Summary:   append([]string(nil), source.Summary...),
+		Technical: append([]string(nil), source.Technical...),
+		DeepDive:  append([]string(nil), source.DeepDive...),
+	}
+	return &copy
 }

@@ -1787,12 +1787,22 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 	}
 	state := m.markBriefSectionResult(msg.kind, msg.err)
 	title := briefSectionTitle(msg.kind)
+	var snapshotCmd tea.Cmd
 	if msg.err != nil {
 		state.Error = fmt.Sprintf("%s section error: %v", title, msg.err)
 		m.briefSections[msg.kind] = state
 		m.errorMessage = state.Error
 		m.infoMessage = "Press a to retry the reading brief."
 		m.appendTranscript("error", state.Error)
+		snapshotCmd = m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
+			SectionMetadata: []notes.BriefSectionMetadata{
+				{
+					Kind:   string(msg.kind),
+					Status: "failed",
+					Error:  msg.err.Error(),
+				},
+			},
+		})
 	} else {
 		m.updateBriefContent(msg.kind, msg.bullets)
 		m.errorMessage = ""
@@ -1806,9 +1816,26 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 		} else {
 			m.appendTranscript("brief", fmt.Sprintf("%s ready.", title))
 		}
+		update := notes.SnapshotUpdate{
+			SectionMetadata: []notes.BriefSectionMetadata{
+				{Kind: string(msg.kind), Status: "completed"},
+			},
+		}
+		if len(msg.bullets) > 0 {
+			bullets := append([]string(nil), msg.bullets...)
+			switch msg.kind {
+			case llm.BriefSummary:
+				update.Brief = &notes.BriefSnapshot{Summary: bullets}
+			case llm.BriefTechnical:
+				update.Brief = &notes.BriefSnapshot{Technical: bullets}
+			case llm.BriefDeepDive:
+				update.Brief = &notes.BriefSnapshot{DeepDive: bullets}
+			}
+		}
+		snapshotCmd = m.appendConversationSnapshotCmd(update)
 	}
 	m.markViewportDirty()
-	return nil
+	return snapshotCmd
 }
 
 func (m *model) handleBriefSectionStream(msg briefSectionStreamMsg) tea.Cmd {

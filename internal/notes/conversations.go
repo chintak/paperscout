@@ -17,8 +17,10 @@ type ConversationSnapshot struct {
 
 // SnapshotUpdate appends new messages or notes to an existing snapshot.
 type SnapshotUpdate struct {
-	Messages []ConversationMessage `json:"messages,omitempty"`
-	Notes    []SnapshotNote        `json:"notes,omitempty"`
+	Messages        []ConversationMessage  `json:"messages,omitempty"`
+	Notes           []SnapshotNote         `json:"notes,omitempty"`
+	Brief           *BriefSnapshot         `json:"brief,omitempty"`
+	SectionMetadata []BriefSectionMetadata `json:"sectionMetadata,omitempty"`
 }
 
 // ConversationMessage records one transcript entry or user message.

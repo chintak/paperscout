@@ -29,9 +29,9 @@ func TestPaperScoutInitialHelpSnapshot(t *testing.T) {
 		Width:   100,
 		Height:  32,
 		Steps: []tuitest.Step{
-			{Delay: 750 * time.Millisecond},
+			{Delay: time.Second},
 			{Input: []byte("?")},
-			{Delay: 750 * time.Millisecond},
+			{Delay: time.Second},
 			{Input: tuitest.KeyCtrlC},
 		},
 		Timeout:        5 * time.Second,

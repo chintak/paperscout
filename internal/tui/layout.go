@@ -38,22 +38,36 @@ func newPageLayout() pageLayout {
 		viewportWidth:    80,
 		viewportHeight:   20,
 		transcriptHeight: 10,
-		composerHeight:   4,
+		composerHeight:   1,
 	}
 }
 
 func (l *pageLayout) Update(width, height int) {
 	l.windowWidth = width
 	l.windowHeight = height
-	innerWidth := width - viewportHorizontalPadding
+	if l.composerHeight < 1 {
+		l.composerHeight = 1
+	}
+	l.reflow()
+}
+
+func (l *pageLayout) SetComposerHeight(height int) {
+	if height < 1 {
+		height = 1
+	}
+	l.composerHeight = height
+	l.reflow()
+}
+
+func (l *pageLayout) reflow() {
+	innerWidth := l.windowWidth - viewportHorizontalPadding
 	if innerWidth < minViewportWidth {
 		innerWidth = minViewportWidth
 	}
 	l.viewportWidth = innerWidth
-	l.composerHeight = 1
 	const chrome = 8
 	const footerStatusHeight = 1
-	usable := height - chrome - l.composerHeight
+	usable := l.windowHeight - chrome - l.composerHeight
 	if usable < 12 {
 		usable = 12
 	}

@@ -30,6 +30,7 @@ const (
 	minViewportWidth          = 40
 	viewportHorizontalPadding = 4
 	transcriptPreviewLimit    = 240
+	maxComposerHeight         = 4
 )
 
 type qaExchange struct {
@@ -51,7 +52,7 @@ const (
 )
 
 const (
-composerURLPlaceholder      = "Paste an arXiv URL or identifier (Alt+Enter to load)…"
-composerNotePlaceholder     = "Enter: ask • Ctrl+Enter: note • Alt+Enter: URL"
+	composerURLPlaceholder      = "Paste an arXiv URL or identifier (Alt+Enter to load)…"
+	composerNotePlaceholder     = "Enter: ask • Ctrl+Enter: note • Alt+Enter: URL"
 	composerQuestionPlaceholder = "Ask about the loaded PDF (Enter to send)…"
 )

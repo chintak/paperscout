@@ -44,10 +44,16 @@ func New(config Config) tea.Model {
 	composer := textarea.New()
 	composer.Placeholder = composerNotePlaceholder
 	composer.CharLimit = 2000
-	composer.SetWidth(80)
-	composer.SetHeight(1)
 	composer.ShowLineNumbers = false
 	composer.Prompt = "> "
+	composer.SetPromptFunc(lipgloss.Width(composer.Prompt), func(line int) string {
+		if line == 0 {
+			return composer.Prompt
+		}
+		return strings.Repeat(" ", len(composer.Prompt))
+	})
+	composer.SetWidth(80)
+	composer.SetHeight(1)
 	composer.EndOfBufferCharacter = ' '
 	composer.FocusedStyle.Base = composerFocusedBaseStyle
 	composer.FocusedStyle.CursorLine = composerCursorLineFocusedStyle
@@ -309,10 +315,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleSuggestionResult(msg)
 	case tea.WindowSizeMsg:
 		m.layout.Update(msg.Width, msg.Height)
-		m.viewport.Width = m.layout.viewportWidth
-		m.viewport.Height = m.layout.viewportHeight
-		m.transcriptViewport.Width = m.layout.viewportWidth
-		m.transcriptViewport.Height = m.layout.transcriptHeight
 		composerWidth := m.layout.windowWidth - viewportHorizontalPadding
 		if composerWidth > 72 {
 			composerWidth = 72
@@ -321,7 +323,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			composerWidth = minViewportWidth
 		}
 		m.composer.SetWidth(composerWidth)
-		m.composer.SetHeight(m.layout.composerHeight)
+		m.syncLayout()
+		m.updateComposerHeight()
 		m.markTranscriptDirty()
 		m.markViewportDirty()
 		return m, nil
@@ -503,6 +506,7 @@ func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
 	}
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(key)
+	m.updateComposerHeight()
 	return cmd, true
 }
 
@@ -644,6 +648,66 @@ func (m *model) refreshTranscriptIfDirty() {
 	}
 }
 
+func (m *model) syncLayout() {
+	m.viewport.Width = m.layout.viewportWidth
+	m.viewport.Height = m.layout.viewportHeight
+	m.transcriptViewport.Width = m.layout.viewportWidth
+	m.transcriptViewport.Height = m.layout.transcriptHeight
+}
+
+func (m *model) updateComposerHeight() {
+	if m.layout.windowWidth == 0 || m.layout.windowHeight == 0 {
+		return
+	}
+	desired := m.desiredComposerHeight()
+	changed := false
+	if desired != m.layout.composerHeight {
+		m.layout.SetComposerHeight(desired)
+		m.syncLayout()
+		changed = true
+	}
+	if m.composer.Height() != m.layout.composerHeight {
+		m.composer.SetHeight(m.layout.composerHeight)
+		changed = true
+	}
+	if changed {
+		m.markTranscriptDirty()
+		m.markViewportDirty()
+	}
+}
+
+func (m *model) desiredComposerHeight() int {
+	width := m.composer.Width()
+	if width <= 0 {
+		return 1
+	}
+	value := m.composer.Value()
+	if value == "" {
+		return 1
+	}
+	lines := strings.Split(value, "\n")
+	height := 0
+	for _, line := range lines {
+		if line == "" {
+			height++
+			continue
+		}
+		wrapped := wordwrap.String(line, width)
+		if wrapped == "" {
+			height++
+			continue
+		}
+		height += strings.Count(wrapped, "\n") + 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	if height > maxComposerHeight {
+		height = maxComposerHeight
+	}
+	return height
+}
+
 func (m *model) refreshViewport() {
 	m.viewportDirty = false
 	prevYOffset := m.viewport.YOffset
@@ -736,6 +800,9 @@ func (m *model) setComposerMode(mode composerMode, placeholder string, focus boo
 		m.composer.Placeholder = placeholder
 	}
 	m.composer.Focus()
+	if m.layout.windowWidth > 0 && m.layout.windowHeight > 0 {
+		m.updateComposerHeight()
+	}
 }
 
 func (m *model) cancelComposerEntry() {

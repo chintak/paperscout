@@ -635,6 +635,22 @@ func TestQueuedQuestionStartsAfterBriefCompletes(t *testing.T) {
 	}
 }
 
+func TestComposerHeightWrapsInput(t *testing.T) {
+	m := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 50, Height: 30})
+	m = updated.(*model)
+
+	m.composer.SetValue(strings.Repeat("word ", 60))
+	m.updateComposerHeight()
+
+	if m.composer.Height() <= 1 {
+		t.Fatalf("expected composer height to grow, got %d", m.composer.Height())
+	}
+	if m.composer.Height() > maxComposerHeight {
+		t.Fatalf("expected composer height <= %d, got %d", maxComposerHeight, m.composer.Height())
+	}
+}
+
 func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m := newTestModel(t)
 	m.config.LLM = fakeLLM{}

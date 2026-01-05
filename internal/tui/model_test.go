@@ -198,6 +198,58 @@ func TestMouseScrollIgnoredOutsideDisplayInput(t *testing.T) {
 	}
 }
 
+func TestMouseSelectionCopiesToClipboard(t *testing.T) {
+	m := newTestModel(t)
+	m.stage = stageInput
+	m.viewport.SetYOffset(0)
+	m.refreshViewport()
+	if len(m.viewportLines) < 3 {
+		t.Fatalf("expected at least 3 viewport lines, got %d", len(m.viewportLines))
+	}
+	expected := strings.TrimSpace(stripANSI(strings.Join(m.viewportLines[:3], "\n")))
+
+	var copied string
+	originalClipboard := clipboardWrite
+	clipboardWrite = func(text string) error {
+		copied = text
+		return nil
+	}
+	t.Cleanup(func() { clipboardWrite = originalClipboard })
+
+	top := m.viewportStartRow()
+	m.Update(tea.MouseMsg{Type: tea.MouseLeft, Y: top})
+	m.Update(tea.MouseMsg{Type: tea.MouseMotion, Y: top + 2})
+	m.Update(tea.MouseMsg{Type: tea.MouseRelease, Y: top + 2})
+
+	if copied != expected {
+		t.Fatalf("copied text mismatch: %q", copied)
+	}
+	if m.infoMessage != "Selection copied to clipboard." {
+		t.Fatalf("unexpected info message: %q", m.infoMessage)
+	}
+}
+
+func TestMouseSelectionClipboardFailureSetsError(t *testing.T) {
+	m := newTestModel(t)
+	m.stage = stageInput
+	m.viewport.SetYOffset(0)
+	m.refreshViewport()
+
+	originalClipboard := clipboardWrite
+	clipboardWrite = func(text string) error {
+		return errors.New("clipboard unavailable")
+	}
+	t.Cleanup(func() { clipboardWrite = originalClipboard })
+
+	top := m.viewportStartRow()
+	m.Update(tea.MouseMsg{Type: tea.MouseLeft, Y: top})
+	m.Update(tea.MouseMsg{Type: tea.MouseRelease, Y: top})
+
+	if m.errorMessage == "" {
+		t.Fatal("expected clipboard error message")
+	}
+}
+
 func TestHydrateConversationHistoryLoadsSnapshot(t *testing.T) {
 	t.Parallel()
 

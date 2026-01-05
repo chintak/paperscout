@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -150,6 +151,7 @@ type model struct {
 	questionLoading         bool
 	selectionAnchor         int
 	selectionActive         bool
+	mouseSelectionActive    bool
 	pendingFocusAnchor      string
 	jobBus                  *jobBus
 	jobSnapshots            map[jobKind]jobSnapshot
@@ -296,7 +298,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case stageDisplay:
 				if m.mode == modeHighlight {
 					m.mode = modeNormal
-					m.selectionActive = false
+					m.clearSelection()
 					m.infoMessage = "Highlight mode disabled."
 					m.markViewportDirty()
 					return m, nil
@@ -309,6 +311,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		if m.stage == stageDisplay || m.stage == stageInput {
+			if m.handleMouseSelection(msg) {
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
@@ -346,6 +351,74 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m *model) handleMouseSelection(msg tea.MouseMsg) bool {
+	switch msg.Type {
+	case tea.MouseLeft, tea.MouseMotion, tea.MouseRelease:
+	default:
+		return false
+	}
+
+	line, ok := m.viewportLineForMouse(msg)
+	switch msg.Type {
+	case tea.MouseLeft:
+		if !ok {
+			return false
+		}
+		m.mouseSelectionActive = true
+		m.selectionActive = true
+		m.selectionAnchor = line
+		m.cursorLine = line
+		m.markViewportDirty()
+		return true
+	case tea.MouseMotion:
+		if !m.mouseSelectionActive || !ok {
+			return false
+		}
+		if line != m.cursorLine {
+			m.cursorLine = line
+			m.markViewportDirty()
+		}
+		return true
+	case tea.MouseRelease:
+		if !m.mouseSelectionActive {
+			return false
+		}
+		if ok {
+			m.cursorLine = line
+		}
+		m.copySelectionToClipboard()
+		m.clearSelection()
+		m.markViewportDirty()
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *model) viewportLineForMouse(msg tea.MouseMsg) (int, bool) {
+	m.refreshViewportIfDirty()
+	if m.viewport.Height <= 0 {
+		return 0, false
+	}
+	top := m.viewportStartRow()
+	if msg.Y < top || msg.Y >= top+m.viewport.Height {
+		return 0, false
+	}
+	line := m.viewport.YOffset + (msg.Y - top)
+	if line < 0 || line >= m.lineCount {
+		return 0, false
+	}
+	return line, true
+}
+
+func (m *model) viewportStartRow() int {
+	hero := m.heroView()
+	if strings.TrimSpace(hero) == "" {
+		return 0
+	}
+	return len(splitLinesPreserve(hero)) + 1
 }
 
 func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -662,7 +735,7 @@ func (m *model) refreshViewport() {
 				line = 0
 			}
 			m.cursorLine = line
-			m.selectionActive = false
+			m.clearSelection()
 			forcedYOffset = line
 			m.pendingFocusAnchor = ""
 		}
@@ -756,13 +829,13 @@ func (m *model) moveCursor(delta int) {
 	}
 	if target == m.cursorLine {
 		if m.mode != modeHighlight {
-			m.selectionActive = false
+			m.clearSelection()
 		}
 		return
 	}
 	m.cursorLine = target
 	if m.mode != modeHighlight {
-		m.selectionActive = false
+		m.clearSelection()
 	}
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
@@ -784,7 +857,7 @@ func (m *model) setCursorLine(line int) {
 	}
 	m.cursorLine = line
 	if m.mode != modeHighlight {
-		m.selectionActive = false
+		m.clearSelection()
 	}
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
@@ -807,13 +880,14 @@ func (m *model) toggleHighlightMode() {
 	switch m.mode {
 	case modeHighlight:
 		m.mode = modeNormal
-		m.selectionActive = false
+		m.clearSelection()
 		m.infoMessage = "Highlight mode disabled."
 	default:
 		if m.lineCount == 0 {
 			return
 		}
 		m.mode = modeHighlight
+		m.mouseSelectionActive = false
 		m.selectionAnchor = m.cursorLine
 		m.selectionActive = true
 		m.infoMessage = "Highlight mode enabled. Move to expand selection, press i to capture."
@@ -846,7 +920,7 @@ func (m *model) enterInsertModeFromCursor() (tea.Model, tea.Cmd) {
 
 func (m *model) startNoteEntry(prefill string) {
 	m.mode = modeInsert
-	m.selectionActive = false
+	m.clearSelection()
 	m.composer.SetValue(prefill)
 	m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
 }
@@ -874,7 +948,7 @@ func (m *model) cancelComposerEntry() {
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
 		if m.mode == modeInsert {
 			m.mode = modeNormal
-			m.selectionActive = false
+			m.clearSelection()
 		}
 		m.infoMessage = "Manual note canceled."
 	case composerModeQuestion:
@@ -1046,8 +1120,16 @@ func (m *model) availableSections() []string {
 	return ordered
 }
 
+func (m *model) clearSelection() {
+	m.selectionActive = false
+	m.mouseSelectionActive = false
+}
+
 func (m *model) selectionRange() (int, int, bool) {
-	if !m.selectionActive || m.mode != modeHighlight || m.lineCount == 0 {
+	if !m.selectionActive || m.lineCount == 0 {
+		return 0, 0, false
+	}
+	if m.mode != modeHighlight && !m.mouseSelectionActive {
 		return 0, 0, false
 	}
 	start, end := m.selectionAnchor, m.cursorLine
@@ -1078,18 +1160,34 @@ func (m *model) selectedText() string {
 	return strings.TrimSpace(stripANSI(strings.Join(lines, "\n")))
 }
 
+func (m *model) copySelectionToClipboard() {
+	text := m.selectedText()
+	if text == "" {
+		m.infoMessage = "No text selected."
+		return
+	}
+	if err := clipboardWrite(text); err != nil {
+		m.errorMessage = fmt.Sprintf("Clipboard copy failed: %v", err)
+		return
+	}
+	m.errorMessage = ""
+	m.infoMessage = "Selection copied to clipboard."
+}
+
 var ansiEscapeCodes = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
 func stripANSI(text string) string {
 	return ansiEscapeCodes.ReplaceAllString(text, "")
 }
 
+var clipboardWrite = clipboard.WriteAll
+
 func (m *model) scrollToTop() {
 	m.viewport.SetYOffset(0)
 	if m.lineCount > 0 {
 		m.cursorLine = 0
 		if m.mode != modeHighlight {
-			m.selectionActive = false
+			m.clearSelection()
 		}
 		m.markViewportDirty()
 		m.refreshViewportIfDirty()
@@ -1107,7 +1205,7 @@ func (m *model) scrollToBottom() {
 	if m.lineCount > 0 {
 		m.cursorLine = m.lineCount - 1
 		if m.mode != modeHighlight {
-			m.selectionActive = false
+			m.clearSelection()
 		}
 		m.markViewportDirty()
 		m.refreshViewportIfDirty()
@@ -1140,7 +1238,7 @@ func (m *model) jumpToSection(anchor string) {
 	m.viewport.SetYOffset(line)
 	m.cursorLine = line
 	if m.mode != modeHighlight {
-		m.selectionActive = false
+		m.clearSelection()
 	}
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
@@ -1627,7 +1725,7 @@ func (m *model) actionLoadNewCmd() tea.Cmd {
 	m.composer.SetValue("")
 	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
 	m.mode = modeNormal
-	m.selectionActive = false
+	m.clearSelection()
 	return nil
 }
 
@@ -1790,7 +1888,7 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.qaHistory = nil
 	m.questionLoading = false
 	m.viewport.SetYOffset(0)
-	m.selectionActive = false
+	m.clearSelection()
 	m.pendingFocusAnchor = anchorSummary
 	m.clearSearch()
 	m.errorMessage = ""

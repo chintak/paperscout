@@ -3,6 +3,7 @@ package notes
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSuggestCandidatesUsesContributionsAndHeuristics(t *testing.T) {
@@ -77,5 +78,64 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 
 	if len(got) != 1 || got[0].Title != payload[0].Title || got[0].Body != payload[0].Body {
 		t.Fatalf("unexpected notes payload: %#v", got)
+	}
+}
+
+func TestSavePreservesConversationSnapshots(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	now := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	snapshot := ConversationSnapshot{
+		PaperID:    "5678",
+		PaperTitle: "Snapshot Paper",
+		CapturedAt: now,
+		Messages: []ConversationMessage{
+			{Kind: "brief", Content: "Generated summary", Timestamp: now},
+		},
+		Notes: []SnapshotNote{
+			{Title: "Quick Note", Body: "Remember this.", Kind: "manual", CreatedAt: now},
+		},
+		Brief: &BriefSnapshot{
+			Summary: []string{"Summary bullet"},
+		},
+		SectionMetadata: []BriefSectionMetadata{
+			{Kind: "summary", Status: "completed", DurationMs: 1200},
+		},
+		LLM: &LLMMetadata{Provider: "ollama", Model: "ministral-3:latest"},
+	}
+
+	if err := SaveConversationSnapshots(path, []ConversationSnapshot{snapshot}); err != nil {
+		t.Fatalf("SaveConversationSnapshots() error = %v", err)
+	}
+
+	note := Note{
+		PaperID:    "5678",
+		PaperTitle: "Snapshot Paper",
+		Title:      "Contribution #1",
+		Body:       "Follow-up note.",
+		Kind:       "contribution",
+	}
+
+	if err := Save(path, []Note{note}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	conversations, err := LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(conversations) != 1 || conversations[0].PaperID != "5678" {
+		t.Fatalf("unexpected conversations payload: %#v", conversations)
+	}
+
+	notes, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(notes) != 1 || notes[0].Title != "Contribution #1" {
+		t.Fatalf("unexpected notes payload: %#v", notes)
 	}
 }

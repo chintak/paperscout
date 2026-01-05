@@ -1,11 +1,7 @@
 package notes
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -22,9 +18,9 @@ type Note struct {
 
 // Candidate is a suggested note derived automatically from a paper.
 type Candidate struct {
-	Title string
-	Body  string
-	Kind  string
+	Title  string
+	Body   string
+	Kind   string
 	Reason string
 }
 
@@ -52,9 +48,9 @@ func SuggestCandidates(title, abstract string, contributions []string) []Candida
 		for i := 0; i < max; i++ {
 			body := contributions[i]
 			suggestions = append(suggestions, Candidate{
-				Title: fmt.Sprintf("Contribution #%d", i+1),
-				Body:  body,
-				Kind:  "contribution",
+				Title:  fmt.Sprintf("Contribution #%d", i+1),
+				Body:   body,
+				Kind:   "contribution",
 				Reason: "Key insight extracted from the abstract.",
 			})
 		}
@@ -131,39 +127,4 @@ func pickSentenceByKeywords(text string, keywords []string) string {
 		}
 	}
 	return ""
-}
-
-// Save appends notes to the knowledge base file, creating it if necessary.
-func Save(path string, newNotes []Note) error {
-	if len(newNotes) == 0 {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-
-	existing, err := Load(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	payload := append(existing, newNotes...)
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
-}
-
-// Load returns all stored notes from the knowledge base.
-func Load(path string) ([]Note, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var notes []Note
-	if err := json.Unmarshal(data, &notes); err != nil {
-		return nil, err
-	}
-	return notes, nil
 }

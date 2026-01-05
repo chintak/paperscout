@@ -47,7 +47,7 @@ Runs table-driven unit tests for the `internal/arxiv` and `internal/notes` packa
 - **Session log + composer** – The log captures paper loads, summaries, Q&A, and saves for later review, while the fixed multi-line composer at the bottom keeps note-taking front-and-center.
 
 ## Knowledge Base Format
-`zettelkasten.json` contains entries like:
+`zettelkasten.json` is a JSON array. Note entries look like:
 ```json
 {
   "paperId": "2101.00001",
@@ -56,6 +56,20 @@ Runs table-driven unit tests for the `internal/arxiv` and `internal/notes` packa
   "body": "We introduce ...",
   "kind": "contribution",
   "createdAt": "2024-05-01T12:00:00Z"
+}
+```
+Conversation snapshots are stored as additional entries with `entryType: "conversation"` and capture messages, notes, and LLM section metadata:
+```json
+{
+  "entryType": "conversation",
+  "paperId": "2101.00001",
+  "paperTitle": "Awesome Research",
+  "capturedAt": "2024-05-01T12:00:00Z",
+  "messages": [{ "kind": "brief", "content": "...", "timestamp": "2024-05-01T12:01:00Z" }],
+  "notes": [{ "title": "Note", "body": "...", "kind": "manual", "createdAt": "2024-05-01T12:02:00Z" }],
+  "brief": { "summary": ["..."], "technical": ["..."], "deepDive": ["..."] },
+  "sectionMetadata": [{ "kind": "summary", "status": "completed", "durationMs": 1200 }],
+  "llm": { "provider": "ollama", "model": "ministral-3:latest" }
 }
 ```
 Use `jq` or your favorite database to query them later for ideation.

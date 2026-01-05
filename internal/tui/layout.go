@@ -2,11 +2,21 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/muesli/reflow/wordwrap"
 
 	"github.com/csheth/browse/internal/llm"
+)
+
+var (
+	markdownLinkPattern           = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	markdownBoldPattern           = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	markdownBoldUnderscorePattern = regexp.MustCompile(`__([^_]+)__`)
+	markdownItalicPattern         = regexp.MustCompile(`\*([^*]+)\*`)
+	markdownItalicUnderscore      = regexp.MustCompile(`_([^_]+)_`)
+	markdownBulletPattern         = regexp.MustCompile(`^(\s*)[-*+]\s+`)
 )
 
 type pageLayout struct {
@@ -79,7 +89,7 @@ func (m *model) writeConversationStream(cb *contentBuilder) {
 			cb.WriteString(helperStyle.Render(label))
 			cb.WriteRune('\n')
 		}
-		body := wordwrap.String(entry.Content, wrap)
+		body := formatConversationEntry(entry.Content, wrap)
 		cb.WriteString(indentMultiline(body, "  "))
 		if idx < len(m.transcriptEntries)-1 {
 			cb.WriteRune('\n')
@@ -249,6 +259,42 @@ func splitLinesPreserve(content string) []string {
 		return []string{""}
 	}
 	return strings.Split(content, "\n")
+}
+
+func formatConversationEntry(content string, wrap int) string {
+	if content == "" {
+		return ""
+	}
+	lines := splitLinesPreserve(content)
+	rendered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			rendered = append(rendered, "")
+			continue
+		}
+		formatted := formatMarkdownLine(line)
+		if wrap > 0 {
+			formatted = wordwrap.String(formatted, wrap)
+		}
+		rendered = append(rendered, formatted)
+	}
+	return strings.Join(rendered, "\n")
+}
+
+func formatMarkdownLine(line string) string {
+	if line == "" {
+		return ""
+	}
+	if matches := markdownBulletPattern.FindStringSubmatch(line); matches != nil {
+		rest := strings.TrimSpace(line[len(matches[0]):])
+		line = matches[1] + "• " + rest
+	}
+	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
+	line = markdownBoldPattern.ReplaceAllString(line, "$1")
+	line = markdownBoldUnderscorePattern.ReplaceAllString(line, "$1")
+	line = markdownItalicPattern.ReplaceAllString(line, "$1")
+	line = markdownItalicUnderscore.ReplaceAllString(line, "$1")
+	return line
 }
 
 func previewText(value string, limit int) string {

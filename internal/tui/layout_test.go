@@ -34,3 +34,12 @@ func TestPageLayoutUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatConversationEntryMarkdown(t *testing.T) {
+	input := "**Bold** and *italic*\n- item one\n[Docs](https://example.com)"
+	got := formatConversationEntry(input, 80)
+	want := "Bold and italic\n• item one\nDocs (https://example.com)"
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}

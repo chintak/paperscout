@@ -127,7 +127,7 @@ func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
 	m.config.LLM = fakeLLM{}
-	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
+	m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
 	m.composer.SetValue("What is the evaluation metric?")
 
 	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -156,7 +156,7 @@ func TestQuestionDraftUpdatedWithRefinedAnswer(t *testing.T) {
 		Abstract: "Sentence one. Sentence two.",
 	}
 	m.config.LLM = fakeLLM{}
-	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
+	m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
 	m.composer.SetValue("What is the evaluation metric?")
 
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {
@@ -200,7 +200,7 @@ func TestQuestionDraftPreservedOnError(t *testing.T) {
 		Abstract: "Sentence one. Sentence two.",
 	}
 	m.config.LLM = fakeLLM{}
-	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
+	m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
 	m.composer.SetValue("What is the evaluation metric?")
 
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {

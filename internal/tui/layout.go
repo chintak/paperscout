@@ -49,7 +49,7 @@ func (l *pageLayout) Update(width, height int) {
 	if l.transcriptHeight < 6 {
 		l.transcriptHeight = 6
 	}
-	contentHeight := usable - l.transcriptHeight - footerStatusHeight
+	contentHeight := usable - footerStatusHeight
 	if contentHeight < 6 {
 		contentHeight = 6
 	}

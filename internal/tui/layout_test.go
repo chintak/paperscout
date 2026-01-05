@@ -12,8 +12,8 @@ func TestPageLayoutUpdate(t *testing.T) {
 		transcriptHeight int
 		composerHeight   int
 	}{
-		{name: "narrow", width: 80, height: 24, viewportWidth: 76, viewportHeight: 6, transcriptHeight: 6, composerHeight: 4},
-		{name: "wide", width: 200, height: 40, viewportWidth: 196, viewportHeight: 18, transcriptHeight: 9, composerHeight: 4},
+		{name: "narrow", width: 80, height: 24, viewportWidth: 76, viewportHeight: 11, transcriptHeight: 6, composerHeight: 4},
+		{name: "wide", width: 200, height: 40, viewportWidth: 196, viewportHeight: 27, transcriptHeight: 9, composerHeight: 4},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/wordwrap"
@@ -75,24 +76,45 @@ func (m *model) composerPanel() string {
 }
 
 func (m *model) footerView() string {
-	m.refreshTranscriptIfDirty()
-	logBody := strings.TrimSpace(m.transcriptViewport.View())
-	if logBody == "" {
-		logBody = helperStyle.Render("Interactions will appear here once you load a paper.")
-	}
-	footer := []string{}
-	if meter := m.sessionMeterView(); meter != "" {
-		footer = append(footer, meter)
-	}
-	footer = append(footer, joinNonEmpty([]string{
-		sectionHeaderStyle.Render("Session Log"),
-		logBody,
-	}))
-	return joinNonEmpty(footer)
+	return m.footerTickerView()
 }
 
 func (m *model) composerHelpText() string {
 	return "Enter: ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear"
+}
+
+func (m *model) footerTickerView() string {
+	hints := m.composerHelpText()
+	width := m.layout.windowWidth
+	if width <= 0 {
+		width = 80
+	}
+	available := width - 2
+	if available <= 0 {
+		return statusBarStyle.Render(hints)
+	}
+	line := hints
+	if last := m.lastTranscriptSummary(); last != "" {
+		separator := "  •  "
+		label := "Last: "
+		remaining := available - utf8.RuneCountInString(hints) - utf8.RuneCountInString(separator) - utf8.RuneCountInString(label)
+		if remaining > 0 {
+			line = hints + separator + label + previewText(last, remaining)
+		} else {
+			line = previewText(hints, available)
+		}
+	} else {
+		line = previewText(hints, available)
+	}
+	return statusBarStyle.Render(line)
+}
+
+func (m *model) lastTranscriptSummary() string {
+	if len(m.transcriptEntries) == 0 {
+		return ""
+	}
+	entry := m.transcriptEntries[len(m.transcriptEntries)-1]
+	return fmt.Sprintf("%s: %s", entry.Kind, entry.Content)
 }
 
 func (m *model) viewSearch() string {

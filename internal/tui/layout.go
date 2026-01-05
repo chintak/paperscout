@@ -17,6 +17,10 @@ var (
 	markdownItalicPattern         = regexp.MustCompile(`\*([^*]+)\*`)
 	markdownItalicUnderscore      = regexp.MustCompile(`_([^_]+)_`)
 	markdownBulletPattern         = regexp.MustCompile(`^(\s*)[-*+]\s+`)
+	markdownHeadingPattern        = regexp.MustCompile(`^\s*#{1,6}\s+`)
+	markdownCodeFencePattern      = regexp.MustCompile("^\\s*```")
+	markdownInlineCodePattern     = regexp.MustCompile("`([^`]+)`")
+	markdownQuotePattern          = regexp.MustCompile(`^\s*>\s+`)
 )
 
 type pageLayout struct {
@@ -277,13 +281,23 @@ func formatConversationEntry(content string, wrap int) string {
 	}
 	lines := splitLinesPreserve(content)
 	rendered := make([]string, 0, len(lines))
+	inCodeBlock := false
 	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
+		trimmed := strings.TrimSpace(line)
+		if markdownCodeFencePattern.MatchString(trimmed) {
+			inCodeBlock = !inCodeBlock
+			continue
+		}
+		if trimmed == "" {
 			rendered = append(rendered, "")
 			continue
 		}
+		if inCodeBlock {
+			rendered = append(rendered, line)
+			continue
+		}
 		formatted := formatMarkdownLine(line)
-		if wrap > 0 {
+		if wrap > 0 && !strings.Contains(line, "|") {
 			formatted = wordwrap.String(formatted, wrap)
 		}
 		rendered = append(rendered, formatted)
@@ -295,11 +309,14 @@ func formatMarkdownLine(line string) string {
 	if line == "" {
 		return ""
 	}
+	line = markdownHeadingPattern.ReplaceAllString(line, "")
+	line = markdownQuotePattern.ReplaceAllString(line, "")
 	if matches := markdownBulletPattern.FindStringSubmatch(line); matches != nil {
 		rest := strings.TrimSpace(line[len(matches[0]):])
 		line = matches[1] + "• " + rest
 	}
 	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
+	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
 	line = markdownBoldPattern.ReplaceAllString(line, "$1")
 	line = markdownBoldUnderscorePattern.ReplaceAllString(line, "$1")
 	line = markdownItalicPattern.ReplaceAllString(line, "$1")

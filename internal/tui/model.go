@@ -1986,6 +1986,7 @@ var (
 	markdownHeadingStyle     = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
 	markdownBulletStyle      = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Bold(true)
 	markdownTableStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#d9b56c"))
+	markdownTableHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f2c97d")).Bold(true)
 	markdownQuoteStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0a08a")).Italic(true)
 	markdownCodeStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
 

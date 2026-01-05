@@ -317,7 +317,8 @@ func formatConversationEntry(content string, wrap int) string {
 	lines := splitLinesPreserve(content)
 	rendered := make([]string, 0, len(lines))
 	inCodeBlock := false
-	for _, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		trimmed := strings.TrimSpace(line)
 		if markdownCodeFencePattern.MatchString(trimmed) {
 			inCodeBlock = !inCodeBlock
@@ -329,6 +330,19 @@ func formatConversationEntry(content string, wrap int) string {
 		}
 		if inCodeBlock {
 			rendered = append(rendered, markdownCodeStyle.Render(line))
+			continue
+		}
+		if isMarkdownTableLine(trimmed) {
+			block := []string{line}
+			for j := i + 1; j < len(lines); j++ {
+				next := strings.TrimSpace(lines[j])
+				if !isMarkdownTableLine(next) {
+					break
+				}
+				block = append(block, lines[j])
+				i = j
+			}
+			rendered = append(rendered, renderMarkdownTable(block)...)
 			continue
 		}
 		formatted := formatMarkdownLineWithKind(line)
@@ -392,6 +406,116 @@ func formatMarkdownLineWithKind(line string) markdownLine {
 func isMarkdownTableLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.Count(trimmed, "|") >= 2
+}
+
+func renderMarkdownTable(lines []string) []string {
+	rows := make([][]string, 0, len(lines))
+	colCount := 0
+	for _, line := range lines {
+		cells := splitTableLine(line)
+		if isMarkdownTableDivider(cells) {
+			continue
+		}
+		cleaned := make([]string, 0, len(cells))
+		for _, cell := range cells {
+			cleaned = append(cleaned, formatMarkdownInline(cell))
+		}
+		if len(cleaned) > colCount {
+			colCount = len(cleaned)
+		}
+		rows = append(rows, cleaned)
+	}
+	if len(rows) == 0 || colCount == 0 {
+		return nil
+	}
+	widths := make([]int, colCount)
+	for _, row := range rows {
+		for idx := 0; idx < colCount; idx++ {
+			cell := ""
+			if idx < len(row) {
+				cell = row[idx]
+			}
+			size := utf8.RuneCountInString(stripANSI(cell))
+			if size > widths[idx] {
+				widths[idx] = size
+			}
+		}
+	}
+	rendered := make([]string, 0, len(rows))
+	for rowIdx, row := range rows {
+		parts := make([]string, colCount)
+		for idx := 0; idx < colCount; idx++ {
+			cell := ""
+			if idx < len(row) {
+				cell = row[idx]
+			}
+			pad := widths[idx] - utf8.RuneCountInString(stripANSI(cell))
+			if pad < 0 {
+				pad = 0
+			}
+			parts[idx] = " " + cell + strings.Repeat(" ", pad+1)
+		}
+		line := "|" + strings.Join(parts, "|") + "|"
+		if rowIdx == 0 && len(rows) > 1 {
+			rendered = append(rendered, markdownTableHeaderStyle.Render(line))
+		} else {
+			rendered = append(rendered, markdownTableStyle.Render(line))
+		}
+	}
+	return rendered
+}
+
+func splitTableLine(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "|") {
+		trimmed = strings.TrimPrefix(trimmed, "|")
+	}
+	if strings.HasSuffix(trimmed, "|") {
+		trimmed = strings.TrimSuffix(trimmed, "|")
+	}
+	raw := strings.Split(trimmed, "|")
+	cells := make([]string, 0, len(raw))
+	for _, cell := range raw {
+		cells = append(cells, strings.TrimSpace(cell))
+	}
+	return cells
+}
+
+func isMarkdownTableDivider(cells []string) bool {
+	if len(cells) == 0 {
+		return false
+	}
+	for _, cell := range cells {
+		trimmed := strings.TrimSpace(cell)
+		if trimmed == "" {
+			return false
+		}
+		for _, r := range trimmed {
+			switch r {
+			case '-', ':':
+				continue
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func formatMarkdownInline(text string) string {
+	line := strings.TrimSpace(text)
+	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
+	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
+	line = markdownStrikethroughPattern.ReplaceAllString(line, "$1")
+	line = markdownBoldPattern.ReplaceAllString(line, "$1")
+	line = markdownBoldUnderscorePattern.ReplaceAllString(line, "$1")
+	line = markdownItalicPattern.ReplaceAllString(line, "$1")
+	line = markdownItalicUnderscore.ReplaceAllString(line, "$1")
+	line = strings.ReplaceAll(line, "**", "")
+	line = strings.ReplaceAll(line, "__", "")
+	line = strings.ReplaceAll(line, "~~", "")
+	line = strings.ReplaceAll(line, "`", "")
+	return line
 }
 
 func styleMarkdownLine(line string, kind markdownLineKind) string {

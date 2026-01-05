@@ -69,6 +69,19 @@ func TestFormatConversationEntryNestedLists(t *testing.T) {
 	}
 }
 
+func TestFormatConversationEntryTableAlignment(t *testing.T) {
+	input := "| Col | Val |\n| --- | ---- |\n| A | 1 |\n| Long | 22 |"
+	got := stripANSI(formatConversationEntry(input, 80))
+	want := strings.Join([]string{
+		"| Col  | Val |",
+		"| A    | 1   |",
+		"| Long | 22  |",
+	}, "\n")
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}
+
 func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
 	m := &model{
 		viewport: viewport.New(80, 20),

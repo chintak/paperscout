@@ -151,6 +151,53 @@ func TestComposerCtrlEnterStoresManualNote(t *testing.T) {
 	}
 }
 
+func TestAppendTranscriptMarksViewportDirty(t *testing.T) {
+	m := newTestModel(t)
+	m.viewportDirty = false
+
+	m.appendTranscript("note", "hello")
+
+	if !m.viewportDirty {
+		t.Fatal("expected viewport to be marked dirty after transcript append")
+	}
+}
+
+func TestMouseScrollInInputStageUpdatesViewport(t *testing.T) {
+	m := newTestModel(t)
+	m.stage = stageInput
+	m.viewport.Width = 20
+	m.viewport.Height = 3
+	m.viewport.SetContent(strings.Join([]string{"one", "two", "three", "four", "five"}, "\n"))
+	m.viewport.YOffset = 0
+
+	updated, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	next, ok := updated.(*model)
+	if !ok {
+		t.Fatalf("expected *model, got %T", updated)
+	}
+	if next.viewport.YOffset == 0 {
+		t.Fatal("expected mouse wheel to scroll in input stage")
+	}
+}
+
+func TestMouseScrollIgnoredOutsideDisplayInput(t *testing.T) {
+	m := newTestModel(t)
+	m.stage = stageLoading
+	m.viewport.Width = 20
+	m.viewport.Height = 3
+	m.viewport.SetContent(strings.Join([]string{"one", "two", "three", "four", "five"}, "\n"))
+	m.viewport.YOffset = 0
+
+	updated, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	next, ok := updated.(*model)
+	if !ok {
+		t.Fatalf("expected *model, got %T", updated)
+	}
+	if next.viewport.YOffset != 0 {
+		t.Fatal("mouse scroll should be ignored outside input/display stages")
+	}
+}
+
 func TestHydrateConversationHistoryLoadsSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -178,6 +225,7 @@ func TestHydrateConversationHistoryLoadsSnapshot(t *testing.T) {
 	m := newTestModel(t)
 	m.config.KnowledgeBasePath = path
 	m.paper = &arxiv.Paper{ID: "1234", Title: "Fixture"}
+	m.viewportDirty = false
 	m.hydrateConversationHistory()
 
 	if len(m.transcriptEntries) != 2 {
@@ -188,6 +236,9 @@ func TestHydrateConversationHistoryLoadsSnapshot(t *testing.T) {
 	}
 	if len(m.brief.Summary) != 1 || m.brief.Summary[0] != "Summary bullet" {
 		t.Fatalf("expected brief summary to load, got %#v", m.brief.Summary)
+	}
+	if !m.viewportDirty {
+		t.Fatal("expected viewport dirty after loading conversation history")
 	}
 }
 

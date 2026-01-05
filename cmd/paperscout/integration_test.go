@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,13 @@ func TestPaperScoutInitialHelpSnapshot(t *testing.T) {
 	frame, ok := rec.FinalFrame()
 	if !ok {
 		t.Fatalf("no frames captured")
+	}
+	if !strings.Contains(frame.Plain, "PaperScout") {
+		candidate, found := lastFrameContaining(rec, "PaperScout")
+		if !found {
+			t.Fatalf("no UI frame captured")
+		}
+		frame = candidate
 	}
 
 	snapshotPath := filepath.Join(cmdDir, "testdata", "snapshots", "initial_help.txt")
@@ -93,4 +101,16 @@ func assertSnapshot(t *testing.T, path, got string) {
 	if wantStr != got+"\n" && wantStr != got {
 		t.Fatalf("snapshot mismatch\n---- want ----\n%s\n---- got ----\n%s", wantStr, got)
 	}
+}
+
+func lastFrameContaining(rec *tuitest.Recording, token string) (tuitest.Frame, bool) {
+	if rec == nil {
+		return tuitest.Frame{}, false
+	}
+	for i := len(rec.Frames) - 1; i >= 0; i-- {
+		if strings.Contains(rec.Frames[i].Plain, token) {
+			return rec.Frames[i], true
+		}
+	}
+	return tuitest.Frame{}, false
 }

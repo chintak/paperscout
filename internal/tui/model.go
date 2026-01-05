@@ -308,18 +308,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.handleKey(msg)
 	case tea.MouseMsg:
-		if m.stage == stageDisplay {
-			var cmds []tea.Cmd
+		if m.stage == stageDisplay || m.stage == stageInput {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			m.transcriptViewport, cmd = m.transcriptViewport.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return m, tea.Batch(cmds...)
+			return m, cmd
 		}
 		return m, nil
 	case paperResultMsg:
@@ -608,6 +600,7 @@ func (m *model) hydrateConversationHistory() {
 	})
 	m.transcriptEntries = entries
 	m.markTranscriptDirty()
+	m.markViewportDirty()
 }
 
 func (m *model) markViewportDirty() {
@@ -1699,6 +1692,7 @@ func (m *model) appendTranscript(kind, content string) {
 	}
 	m.transcriptEntries = append(m.transcriptEntries, entry)
 	m.markTranscriptDirty()
+	m.markViewportDirty()
 }
 
 func (m *model) openCommandPalette() {

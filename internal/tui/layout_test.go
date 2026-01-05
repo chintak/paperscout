@@ -1,6 +1,13 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/bubbles/viewport"
+
+	"github.com/csheth/browse/internal/llm"
+)
 
 func TestPageLayoutUpdate(t *testing.T) {
 	cases := []struct {
@@ -50,5 +57,24 @@ func TestFormatConversationEntryMarkdownBlocks(t *testing.T) {
 	want := "Title\nquoted line\ninline and strike\n| Col | Val |\nfunc main() {}"
 	if got != want {
 		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}
+
+func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
+	m := &model{
+		viewport: viewport.New(80, 20),
+		brief: llm.ReadingBrief{
+			Summary: []string{"### **Title**", "| **Col** | **Val** |"},
+		},
+	}
+	view := m.buildDisplayContent()
+	if strings.Contains(view.content, "###") || strings.Contains(view.content, "**") {
+		t.Fatalf("markdown markers should be stripped:\n%s", view.content)
+	}
+	if !strings.Contains(view.content, "Title") {
+		t.Fatalf("expected title content in output:\n%s", view.content)
+	}
+	if !strings.Contains(view.content, "| Col | Val |") {
+		t.Fatalf("expected table line in output:\n%s", view.content)
 	}
 }

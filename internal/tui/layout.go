@@ -141,9 +141,23 @@ func (m *model) buildDisplayContent() displayView {
 
 	renderBullets := func(items []string) {
 		for _, item := range items {
-			cb.WriteString(" • ")
-			cb.WriteString(wordwrap.String(item, bulletWrap))
-			cb.WriteRune('\n')
+			formatted := formatConversationEntry(item, bulletWrap)
+			lines := splitLinesPreserve(formatted)
+			first := true
+			for _, line := range lines {
+				if line == "" {
+					cb.WriteRune('\n')
+					continue
+				}
+				if first {
+					cb.WriteString(" • ")
+					first = false
+				} else {
+					cb.WriteString("   ")
+				}
+				cb.WriteString(line)
+				cb.WriteRune('\n')
+			}
 		}
 	}
 

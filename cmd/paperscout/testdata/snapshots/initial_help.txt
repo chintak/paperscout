@@ -8,8 +8,8 @@
 Navigate arXiv findings with PaperScout.
 
 Paste an arXiv URL in the Composer
-Type an arXiv URL or identifier below and press Shift+Enter to fetch metadata.
-Enter asks a question; Ctrl+Enter saves a note. Esc clears the composer.
+Type an arXiv URL or identifier below and press Enter to fetch metadata.
+Enter loads the paper; Ctrl+Enter saves a note; Esc clears the composer.
 
 Conversation Stream
 Interactions will appear here once you load a paper.
@@ -17,6 +17,6 @@ Interactions will appear here once you load a paper.
 
 Paste an arXiv url or identifier to begin.
 
-> Paste an arXiv URL or identifier (Shift+Enter to load)…
+> Paste an arXiv URL or identifier (Enter to load)…
 
- Enter: ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear
+ Enter: load/ask • Ctrl+Enter: note • Shift+Enter: URL • Esc: clear

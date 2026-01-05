@@ -16,7 +16,7 @@ go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json
 - Hit `Ctrl+K` to open the command palette whenever you forget a shortcut—type to filter and press Enter to run the highlighted action.
 - The layout is a single scrolling column—new fetches append session updates without switching views, so the current context stays visible while jobs run.
 - Every paper renders an AI-powered reading brief with three passes (summary, technical details, deep-dive references); press `a` anytime to regenerate it from the parsed PDF.
-- Interactions stream into a dedicated Session Log pane, and the fixed bottom composer lets you jot multi-line notes—press `Ctrl+Enter` to capture and `Esc` to cancel while `Shift+Enter` keeps you in the same paragraph.
+- Interactions stream into a dedicated Session Log pane, and the fixed bottom composer lets you jot notes—press `Ctrl+Enter` to capture and `Esc` to cancel.
 - Press `r` to load another paper or `Ctrl+C` to quit.
 
 ## LLM Summaries & Questions

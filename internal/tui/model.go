@@ -501,6 +501,9 @@ func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
 		m.composerMode = composerModeURL
 		return m.submitComposer(), true
 	case key.Type == tea.KeyEnter:
+		if m.composerMode == composerModeURL {
+			return m.submitComposer(), true
+		}
 		m.composerMode = composerModeQuestion
 		return m.submitComposer(), true
 	}

@@ -210,9 +210,9 @@ func (m *model) buildIdleContent() displayView {
 	cb := &contentBuilder{}
 	cb.WriteString(sectionHeaderStyle.Render("Paste an arXiv URL in the Composer"))
 	cb.WriteRune('\n')
-	cb.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Shift+Enter to fetch metadata."))
+	cb.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Enter to fetch metadata."))
 	cb.WriteRune('\n')
-	cb.WriteString(helperStyle.Render("Enter asks a question; Ctrl+Enter saves a note. Esc clears the composer."))
+	cb.WriteString(helperStyle.Render("Enter loads the paper; Ctrl+Enter saves a note; Esc clears the composer."))
 	cb.WriteRune('\n')
 	cb.WriteRune('\n')
 	m.writeConversationStream(cb)

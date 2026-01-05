@@ -104,10 +104,30 @@ func TestComposerShiftEnterSubmitsURL(t *testing.T) {
 	}
 }
 
+func TestComposerEnterSubmitsURLInURLMode(t *testing.T) {
+	m := newTestModel(t)
+	m.composer.SetValue("https://arxiv.org/abs/1234.5678")
+
+	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled {
+		t.Fatal("enter should submit URL entries in URL mode")
+	}
+	if cmd == nil {
+		t.Fatal("submit should return a command to start fetch job")
+	}
+	if m.stage != stageLoading {
+		t.Fatalf("stage not updated, got %v want %v", m.stage, stageLoading)
+	}
+	if got := strings.TrimSpace(m.composer.Value()); got != "" {
+		t.Fatalf("composer should clear after submission, got %q", got)
+	}
+}
+
 func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
 	m.config.LLM = fakeLLM{}
+	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
 	m.composer.SetValue("What is the evaluation metric?")
 
 	cmd, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -136,6 +156,7 @@ func TestQuestionDraftUpdatedWithRefinedAnswer(t *testing.T) {
 		Abstract: "Sentence one. Sentence two.",
 	}
 	m.config.LLM = fakeLLM{}
+	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
 	m.composer.SetValue("What is the evaluation metric?")
 
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {
@@ -179,6 +200,7 @@ func TestQuestionDraftPreservedOnError(t *testing.T) {
 		Abstract: "Sentence one. Sentence two.",
 	}
 	m.config.LLM = fakeLLM{}
+	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
 	m.composer.SetValue("What is the evaluation metric?")
 
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {

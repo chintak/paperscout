@@ -51,7 +51,7 @@ const (
 )
 
 const (
-	composerURLPlaceholder      = "Paste an arXiv URL or identifier (Shift+Enter to load)…"
-	composerNotePlaceholder     = "Enter: ask • Ctrl+Enter: note • Shift+Enter: URL"
+composerURLPlaceholder      = "Paste an arXiv URL or identifier (Enter to load)…"
+composerNotePlaceholder     = "Enter: ask • Ctrl+Enter: note • Shift+Enter: URL"
 	composerQuestionPlaceholder = "Ask about the loaded PDF (Enter to send)…"
 )

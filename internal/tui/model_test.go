@@ -582,6 +582,59 @@ func TestBriefSectionResultUpdatesSeededMessage(t *testing.T) {
 	}
 }
 
+func TestQuestionQueuedUntilBriefReady(t *testing.T) {
+	m := newTestModel(t)
+	m.config.LLM = fakeLLM{}
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture", FullText: "content"}
+	m.ensureBriefSections()
+	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
+	m.composer.SetValue("What is this?")
+
+	m.submitComposer()
+
+	if len(m.queuedQuestions) != 1 {
+		t.Fatalf("expected queued question, got %d", len(m.queuedQuestions))
+	}
+	if m.questionLoading {
+		t.Fatal("question loading should be false while queued")
+	}
+	if len(m.qaHistory) != 1 {
+		t.Fatalf("expected qa history entry, got %d", len(m.qaHistory))
+	}
+	if m.infoMessage != "Question queued; waiting for the brief to finish." {
+		t.Fatalf("unexpected info message: %q", m.infoMessage)
+	}
+}
+
+func TestQueuedQuestionStartsAfterBriefCompletes(t *testing.T) {
+	m := newTestModel(t)
+	m.config.LLM = fakeLLM{}
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture", FullText: "content"}
+	m.ensureBriefSections()
+	m.setComposerMode(composerModeQuestion, composerQuestionPlaceholder, true)
+	m.composer.SetValue("What is this?")
+	m.submitComposer()
+
+	var cmd tea.Cmd
+	for _, kind := range briefSectionKinds {
+		cmd = m.handleBriefSectionResult(briefSectionMsg{
+			paperID: m.paper.ID,
+			kind:    kind,
+			bullets: []string{"Bullet"},
+		})
+	}
+
+	if len(m.queuedQuestions) != 0 {
+		t.Fatalf("expected queued questions to be flushed, got %d", len(m.queuedQuestions))
+	}
+	if !m.questionLoading {
+		t.Fatal("expected queued question to start loading after brief completes")
+	}
+	if cmd == nil {
+		t.Fatal("expected command to launch queued question")
+	}
+}
+
 func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m := newTestModel(t)
 	m.config.LLM = fakeLLM{}

@@ -136,6 +136,7 @@ type model struct {
 	briefLoading            bool
 	suggestionLoading       bool
 	qaHistory               []qaExchange
+	queuedQuestions         []int
 	questionLoading         bool
 	selectionAnchor         int
 	selectionActive         bool
@@ -821,15 +822,7 @@ func (m *model) submitComposer() tea.Cmd {
 			TranscriptIndex: -1,
 		}
 		m.appendTranscript("question", value)
-		if draft := draftAnswerForQuestion(m.paper); draft != "" {
-			entry.Answer = draft
-			entry.TranscriptIndex = m.appendTranscriptEntry("answer_draft", draft)
-			m.infoMessage = "Draft response ready; refining via LLM…"
-		} else {
-			m.infoMessage = "Answering question via LLM…"
-		}
 		m.qaHistory = append(m.qaHistory, entry)
-		m.questionLoading = true
 		idx := len(m.qaHistory) - 1
 		m.composer.SetValue("")
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
@@ -842,15 +835,86 @@ func (m *model) submitComposer() tea.Cmd {
 				},
 			},
 		})
-		cmds := []tea.Cmd{m.spinner.Tick, m.jobBus.Start(jobKindQuestion, questionAnswerJob(idx, m.config.LLM, m.paper, value))}
-		if snapshotCmd != nil {
-			cmds = append(cmds, snapshotCmd)
+		if !m.briefReadyForQuestions() {
+			m.enqueueQuestion(idx)
+			m.infoMessage = "Question queued; waiting for the brief to finish."
+			return snapshotCmd
 		}
-		return tea.Batch(cmds...)
+		questionCmd := m.launchQuestion(idx, true, "")
+		if snapshotCmd != nil && questionCmd != nil {
+			return tea.Batch(snapshotCmd, questionCmd)
+		}
+		if snapshotCmd != nil {
+			return snapshotCmd
+		}
+		return questionCmd
 	default:
 		m.infoMessage = "Composer inactive. Press m or q to begin."
 		return nil
 	}
+}
+
+func (m *model) briefReadyForQuestions() bool {
+	if m.paper == nil || m.config.LLM == nil {
+		return true
+	}
+	if strings.TrimSpace(m.paper.FullText) == "" {
+		return true
+	}
+	if m.briefSections == nil {
+		return false
+	}
+	for _, kind := range briefSectionKinds {
+		state, ok := m.briefSections[kind]
+		if !ok {
+			return false
+		}
+		if !state.Completed && state.Error == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *model) enqueueQuestion(index int) {
+	m.queuedQuestions = append(m.queuedQuestions, index)
+}
+
+func (m *model) launchQuestion(index int, allowDraft bool, infoMessage string) tea.Cmd {
+	if m.paper == nil || m.config.LLM == nil {
+		return nil
+	}
+	if index < 0 || index >= len(m.qaHistory) {
+		return nil
+	}
+	entry := &m.qaHistory[index]
+	setInfo := true
+	if allowDraft && entry.Answer == "" && entry.TranscriptIndex < 0 {
+		if draft := draftAnswerForQuestion(m.paper); draft != "" {
+			entry.Answer = draft
+			entry.TranscriptIndex = m.appendTranscriptEntry("answer_draft", draft)
+			m.infoMessage = "Draft response ready; refining via LLM…"
+			setInfo = false
+		}
+	}
+	if setInfo {
+		if infoMessage != "" {
+			m.infoMessage = infoMessage
+		} else {
+			m.infoMessage = "Answering question via LLM…"
+		}
+	}
+	m.questionLoading = true
+	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindQuestion, questionAnswerJob(index, m.config.LLM, m.paper, entry.Question)))
+}
+
+func (m *model) maybeStartQueuedQuestion() tea.Cmd {
+	if !m.briefReadyForQuestions() || m.questionLoading || len(m.queuedQuestions) == 0 {
+		return nil
+	}
+	index := m.queuedQuestions[0]
+	m.queuedQuestions = m.queuedQuestions[1:]
+	return m.launchQuestion(index, false, "Answering queued question via LLM…")
 }
 
 func (m *model) blurComposer() {
@@ -1770,6 +1834,7 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.prepareBriefFallbacks()
 	m.suggestionLoading = false
 	m.qaHistory = nil
+	m.queuedQuestions = nil
 	m.questionLoading = false
 	m.viewport.SetYOffset(0)
 	m.clearSelection()
@@ -1874,7 +1939,14 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 		snapshotCmd = m.appendConversationSnapshotCmd(update)
 	}
 	m.markViewportDirty()
-	return snapshotCmd
+	queuedCmd := m.maybeStartQueuedQuestion()
+	if snapshotCmd != nil && queuedCmd != nil {
+		return tea.Batch(snapshotCmd, queuedCmd)
+	}
+	if snapshotCmd != nil {
+		return snapshotCmd
+	}
+	return queuedCmd
 }
 
 func (m *model) handleBriefSectionStream(msg briefSectionStreamMsg) tea.Cmd {
@@ -1938,7 +2010,14 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 		}
 	}
 	m.markViewportDirty()
-	return snapshotCmd
+	queuedCmd := m.maybeStartQueuedQuestion()
+	if snapshotCmd != nil && queuedCmd != nil {
+		return tea.Batch(snapshotCmd, queuedCmd)
+	}
+	if snapshotCmd != nil {
+		return snapshotCmd
+	}
+	return queuedCmd
 }
 
 func (m *model) handleSuggestionResult(msg suggestionResultMsg) tea.Cmd {

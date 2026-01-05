@@ -40,16 +40,12 @@ func TestPaperScoutInitialHelpSnapshot(t *testing.T) {
 		t.Fatalf("run CLI: %v", err)
 	}
 
-	frame, ok := rec.FinalFrame()
+	frame, ok := lastFrameMatching(rec, []string{"PaperScout", "Conversation Stream", "Paste an arXiv"})
 	if !ok {
-		t.Fatalf("no frames captured")
-	}
-	if !strings.Contains(frame.Plain, "PaperScout") {
-		candidate, found := lastFrameContaining(rec, "PaperScout")
-		if !found {
-			t.Fatalf("no UI frame captured")
+		if _, has := rec.FinalFrame(); !has {
+			t.Fatalf("no frames captured")
 		}
-		frame = candidate
+		t.Fatalf("no UI frame captured")
 	}
 
 	snapshotPath := filepath.Join(cmdDir, "testdata", "snapshots", "initial_help.txt")
@@ -103,13 +99,16 @@ func assertSnapshot(t *testing.T, path, got string) {
 	}
 }
 
-func lastFrameContaining(rec *tuitest.Recording, token string) (tuitest.Frame, bool) {
+func lastFrameMatching(rec *tuitest.Recording, tokens []string) (tuitest.Frame, bool) {
 	if rec == nil {
 		return tuitest.Frame{}, false
 	}
 	for i := len(rec.Frames) - 1; i >= 0; i-- {
-		if strings.Contains(rec.Frames[i].Plain, token) {
-			return rec.Frames[i], true
+		plain := rec.Frames[i].Plain
+		for _, token := range tokens {
+			if strings.Contains(plain, token) {
+				return rec.Frames[i], true
+			}
 		}
 	}
 	return tuitest.Frame{}, false

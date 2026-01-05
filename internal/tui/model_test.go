@@ -44,8 +44,8 @@ func TestComposerEscCancelsNoteMode(t *testing.T) {
 	m.stage = stageDisplay
 	m.startNoteEntry("hello world")
 
-	if !m.composer.Focused() || m.mode != modeInsert {
-		t.Fatalf("composer should be focused in insert mode (mode=%v)", m.mode)
+	if !m.composer.Focused() || m.composerMode != composerModeNote {
+		t.Fatalf("composer should be focused in note mode (mode=%v)", m.composerMode)
 	}
 
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEsc}); !handled {
@@ -57,9 +57,6 @@ func TestComposerEscCancelsNoteMode(t *testing.T) {
 	}
 	if value := strings.TrimSpace(m.composer.Value()); value != "" {
 		t.Fatalf("composer value not cleared: %q", value)
-	}
-	if m.mode != modeNormal {
-		t.Fatalf("mode not reset after cancel: %v", m.mode)
 	}
 }
 

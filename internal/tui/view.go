@@ -190,41 +190,6 @@ func joinNonEmpty(parts []string) string {
 	return strings.Join(filtered, "\n\n")
 }
 
-func (m *model) modeLabel() string {
-	switch m.mode {
-	case modeInsert:
-		return "INSERT"
-	case modeHighlight:
-		return "HIGHLIGHT"
-	default:
-		return "NORMAL"
-	}
-}
-
-func (m *model) sessionMeterView() string {
-	stats := []string{
-		fmt.Sprintf("Mode %s", m.modeLabel()),
-		fmt.Sprintf("Summary %d", len(m.brief.Summary)),
-		fmt.Sprintf("Technical %d", len(m.brief.Technical)),
-		fmt.Sprintf("DeepDive %d", len(m.brief.DeepDive)),
-	}
-	if m.config.LLM != nil {
-		stats = append(stats, fmt.Sprintf("Q&A %d", len(m.qaHistory)))
-		switch {
-		case m.briefLoading || m.questionLoading:
-			stats = append(stats, "LLM working…")
-		case len(m.brief.Summary) > 0:
-			stats = append(stats, "Brief ready")
-		default:
-			stats = append(stats, "Brief pending")
-		}
-	}
-	if jobBadges := m.jobStatusBadges(); len(jobBadges) > 0 {
-		stats = append(stats, jobBadges...)
-	}
-	return statusBarStyle.Render(strings.Join(stats, "  •  "))
-}
-
 type keyHint struct {
 	Key         string
 	Description string

@@ -81,7 +81,6 @@ func New(config Config) tea.Model {
 	m := &model{
 		config:                  config,
 		stage:                   stageInput,
-		mode:                    modeNormal,
 		searchInput:             searchInput,
 		spinner:                 spin,
 		viewport:                vp,
@@ -123,7 +122,6 @@ type model struct {
 	suggestions             []notes.Candidate
 	selected                map[int]bool
 	persisted               map[int]bool
-	mode                    interactionMode
 	cursorLine              int
 	lineCount               int
 	manualNotes             []notes.Note
@@ -296,13 +294,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.closeCommandPalette()
 				return m, nil
 			case stageDisplay:
-				if m.mode == modeHighlight {
-					m.mode = modeNormal
-					m.clearSelection()
-					m.infoMessage = "Highlight mode disabled."
-					m.markViewportDirty()
-					return m, nil
-				}
 				return m, tea.Quit
 			default:
 				return m, tea.Quit
@@ -463,10 +454,6 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(-1)
 	case "down", "j":
 		m.moveCursor(1)
-	case "v":
-		m.toggleHighlightMode()
-	case "i":
-		return m.enterInsertModeFromCursor()
 	case "a":
 		return m, m.actionSummarizeCmd()
 	case "q":
@@ -828,15 +815,11 @@ func (m *model) moveCursor(delta int) {
 		target = m.lineCount - 1
 	}
 	if target == m.cursorLine {
-		if m.mode != modeHighlight {
-			m.clearSelection()
-		}
+		m.clearSelection()
 		return
 	}
 	m.cursorLine = target
-	if m.mode != modeHighlight {
-		m.clearSelection()
-	}
+	m.clearSelection()
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
 	m.ensureCursorVisible()
@@ -856,9 +839,7 @@ func (m *model) setCursorLine(line int) {
 		return
 	}
 	m.cursorLine = line
-	if m.mode != modeHighlight {
-		m.clearSelection()
-	}
+	m.clearSelection()
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
 	m.ensureCursorVisible()
@@ -876,50 +857,7 @@ func (m *model) suggestionAtCursor() (int, bool) {
 	return 0, false
 }
 
-func (m *model) toggleHighlightMode() {
-	switch m.mode {
-	case modeHighlight:
-		m.mode = modeNormal
-		m.clearSelection()
-		m.infoMessage = "Highlight mode disabled."
-	default:
-		if m.lineCount == 0 {
-			return
-		}
-		m.mode = modeHighlight
-		m.mouseSelectionActive = false
-		m.selectionAnchor = m.cursorLine
-		m.selectionActive = true
-		m.infoMessage = "Highlight mode enabled. Move to expand selection, press i to capture."
-	}
-	m.markViewportDirty()
-	m.refreshViewportIfDirty()
-}
-
-func (m *model) enterInsertModeFromCursor() (tea.Model, tea.Cmd) {
-	if m.paper == nil {
-		m.infoMessage = "Load a paper before drafting notes."
-		return m, nil
-	}
-	prefill := ""
-	if m.mode == modeHighlight && m.selectionActive {
-		prefill = strings.TrimSpace(m.selectedText())
-		if prefill == "" {
-			m.infoMessage = "Select non-empty text before inserting."
-			return m, nil
-		}
-	}
-	m.startNoteEntry(prefill)
-	if prefill != "" {
-		m.infoMessage = "Composer prefilled from highlight. Press Ctrl+Enter to store the note."
-	} else {
-		m.infoMessage = "Composer active. Press Ctrl+Enter to store the note."
-	}
-	return m, nil
-}
-
 func (m *model) startNoteEntry(prefill string) {
-	m.mode = modeInsert
 	m.clearSelection()
 	m.composer.SetValue(prefill)
 	m.setComposerMode(composerModeNote, composerNotePlaceholder, true)
@@ -946,10 +884,7 @@ func (m *model) cancelComposerEntry() {
 	case composerModeNote:
 		m.composer.SetValue("")
 		m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
-		if m.mode == modeInsert {
-			m.mode = modeNormal
-			m.clearSelection()
-		}
+		m.clearSelection()
 		m.infoMessage = "Manual note canceled."
 	case composerModeQuestion:
 		m.composer.SetValue("")
@@ -1052,9 +987,6 @@ func (m *model) submitComposer() tea.Cmd {
 func (m *model) blurComposer() {
 	m.composer.Blur()
 	m.composerMode = composerModeIdle
-	if m.mode == modeInsert {
-		m.mode = modeNormal
-	}
 }
 
 func isCtrlEnter(key tea.KeyMsg) bool {
@@ -1126,10 +1058,7 @@ func (m *model) clearSelection() {
 }
 
 func (m *model) selectionRange() (int, int, bool) {
-	if !m.selectionActive || m.lineCount == 0 {
-		return 0, 0, false
-	}
-	if m.mode != modeHighlight && !m.mouseSelectionActive {
+	if !m.selectionActive || !m.mouseSelectionActive || m.lineCount == 0 {
 		return 0, 0, false
 	}
 	start, end := m.selectionAnchor, m.cursorLine
@@ -1186,9 +1115,7 @@ func (m *model) scrollToTop() {
 	m.viewport.SetYOffset(0)
 	if m.lineCount > 0 {
 		m.cursorLine = 0
-		if m.mode != modeHighlight {
-			m.clearSelection()
-		}
+		m.clearSelection()
 		m.markViewportDirty()
 		m.refreshViewportIfDirty()
 	}
@@ -1204,9 +1131,7 @@ func (m *model) scrollToBottom() {
 	m.viewport.SetYOffset(target)
 	if m.lineCount > 0 {
 		m.cursorLine = m.lineCount - 1
-		if m.mode != modeHighlight {
-			m.clearSelection()
-		}
+		m.clearSelection()
 		m.markViewportDirty()
 		m.refreshViewportIfDirty()
 	}
@@ -1237,9 +1162,7 @@ func (m *model) jumpToSection(anchor string) {
 	}
 	m.viewport.SetYOffset(line)
 	m.cursorLine = line
-	if m.mode != modeHighlight {
-		m.clearSelection()
-	}
+	m.clearSelection()
 	m.markViewportDirty()
 	m.refreshViewportIfDirty()
 	m.infoMessage = fmt.Sprintf("Jumped to %s.", sectionLabel(anchor))
@@ -1724,7 +1647,6 @@ func (m *model) actionLoadNewCmd() tea.Cmd {
 	m.markViewportDirty()
 	m.composer.SetValue("")
 	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
-	m.mode = modeNormal
 	m.clearSelection()
 	return nil
 }
@@ -1874,7 +1796,6 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.guide = msg.guide
 	m.suggestions = nil
 	m.stage = stageDisplay
-	m.mode = modeNormal
 	m.cursorLine = 0
 	m.selected = map[int]bool{}
 	m.persisted = map[int]bool{}

@@ -33,14 +33,6 @@ const (
 	transcriptPreviewLimit    = 240
 )
 
-type interactionMode int
-
-const (
-	modeNormal interactionMode = iota
-	modeInsert
-	modeHighlight
-)
-
 type qaExchange struct {
 	Question string
 	Answer   string

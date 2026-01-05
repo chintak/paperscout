@@ -27,7 +27,7 @@ func (m *model) View() string {
 func (m *model) viewInput() string {
 	m.refreshViewportIfDirty()
 	body := m.renderStackedDisplay()
-	return joinNonEmpty([]string{body, m.composerPanel(), m.footerView()})
+	return joinNonEmptyTight([]string{body, m.composerPanel(), m.footerView()})
 }
 
 func (m *model) viewDisplay() string {
@@ -37,7 +37,7 @@ func (m *model) viewDisplay() string {
 	m.refreshTranscriptIfDirty()
 	m.refreshViewportIfDirty()
 	body := m.renderStackedDisplay()
-	return joinNonEmpty([]string{body, m.composerPanel(), m.footerView()})
+	return joinNonEmptyTight([]string{body, m.composerPanel(), m.footerView()})
 }
 
 func (m *model) renderStackedDisplay() string {
@@ -179,6 +179,17 @@ func joinNonEmpty(parts []string) string {
 		filtered = append(filtered, part)
 	}
 	return strings.Join(filtered, "\n\n")
+}
+
+func joinNonEmptyTight(parts []string) string {
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 type keyHint struct {

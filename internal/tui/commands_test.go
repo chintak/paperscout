@@ -2,10 +2,13 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/csheth/browse/internal/arxiv"
 	"github.com/csheth/browse/internal/llm"
+	"github.com/csheth/browse/internal/notes"
 )
 
 type fakeLLM struct{}
@@ -58,5 +61,49 @@ func TestCommandAvailability(t *testing.T) {
 
 	if m.commandAvailable(actionSaveNotes) {
 		t.Fatal("save should require selected notes")
+	}
+}
+
+func TestEnsureConversationSnapshotJobCreatesEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	paper := &arxiv.Paper{ID: "1234", Title: "Snapshot"}
+
+	runner := ensureConversationSnapshotJob(path, paper)
+	if _, err := runner(context.Background()); err != nil {
+		t.Fatalf("ensureConversationSnapshotJob() error = %v", err)
+	}
+
+	snapshots, err := notes.LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 || snapshots[0].PaperID != "1234" {
+		t.Fatalf("unexpected snapshots payload: %#v", snapshots)
+	}
+
+	if _, err := runner(context.Background()); err != nil {
+		t.Fatalf("ensureConversationSnapshotJob() error = %v", err)
+	}
+	snapshots, err = notes.LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected single snapshot entry, got %d", len(snapshots))
+	}
+}
+
+func TestEnsureConversationSnapshotJobRejectsInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	if err := os.WriteFile(path, []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	paper := &arxiv.Paper{ID: "1234", Title: "Snapshot"}
+	runner := ensureConversationSnapshotJob(path, paper)
+	if _, err := runner(context.Background()); err == nil {
+		t.Fatal("expected error for invalid JSON")
 	}
 }

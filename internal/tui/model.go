@@ -1659,6 +1659,13 @@ func (m *model) refreshPaletteMatches() {
 	}
 }
 
+func (m *model) ensureConversationSnapshotCmd() tea.Cmd {
+	if m.paper == nil || m.config.KnowledgeBasePath == "" {
+		return nil
+	}
+	return m.jobBus.Start(jobKindZettel, ensureConversationSnapshotJob(m.config.KnowledgeBasePath, m.paper))
+}
+
 func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	if msg.err != nil {
 		m.stage = stageInput
@@ -1697,17 +1704,22 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.composer.SetValue("")
 	m.setComposerMode(composerModeNote, composerNotePlaceholder, false)
 	m.appendTranscript("paper", fmt.Sprintf("Loaded %s", m.paper.Title))
+	snapshotCmd := m.ensureConversationSnapshotCmd()
 
 	if m.config.LLM == nil {
 		m.infoMessage = fmt.Sprintf("Loaded %s. Configure an LLM provider to see the reading brief.", m.paper.Title)
-		return nil
+		return snapshotCmd
 	}
 	if strings.TrimSpace(m.paper.FullText) == "" {
 		m.infoMessage = fmt.Sprintf("Loaded %s. PDF text missing; skipping reading brief.", m.paper.Title)
-		return nil
+		return snapshotCmd
 	}
 	m.infoMessage = fmt.Sprintf("Loaded %s. Building reading brief…", m.paper.Title)
-	return m.launchBriefSections()
+	briefCmd := m.launchBriefSections()
+	if snapshotCmd != nil {
+		return tea.Batch(snapshotCmd, briefCmd)
+	}
+	return briefCmd
 }
 
 func (m *model) handleSaveResult(msg saveResultMsg) tea.Cmd {
@@ -1855,6 +1867,7 @@ func (m *model) jobStatusBadges() []string {
 	}
 	order := []jobKind{
 		jobKindFetch,
+		jobKindZettel,
 		jobKindBriefSummary,
 		jobKindBriefTechnical,
 		jobKindBriefDeepDive,
@@ -1899,6 +1912,8 @@ func jobKindLabel(kind jobKind) string {
 		return "suggest"
 	case jobKindSave:
 		return "save"
+	case jobKindZettel:
+		return "zettel"
 	case jobKindQuestion:
 		return "qa"
 	default:

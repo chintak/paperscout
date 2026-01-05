@@ -21,6 +21,7 @@ const (
 	jobKindBriefDeepDive  jobKind = "brief_deepdive"
 	jobKindSuggest        jobKind = "suggest"
 	jobKindSave           jobKind = "save"
+	jobKindZettel         jobKind = "zettel"
 	jobKindQuestion       jobKind = "question"
 )
 

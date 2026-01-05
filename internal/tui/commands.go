@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -39,6 +41,37 @@ func saveNotesJob(path string, entries []notes.Note) jobRunner {
 			return saveResultMsg{err: err}, err
 		}
 		return saveResultMsg{count: len(toPersist)}, nil
+	}
+}
+
+func ensureConversationSnapshotJob(path string, paper *arxiv.Paper) jobRunner {
+	paperID := paper.ID
+	title := paper.Title
+	return func(parent context.Context) (tea.Msg, error) {
+		if path == "" || paperID == "" {
+			return nil, nil
+		}
+		snapshots, err := notes.LoadConversationSnapshots(path)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+			snapshots = nil
+		}
+		for _, snapshot := range snapshots {
+			if snapshot.PaperID == paperID {
+				return nil, nil
+			}
+		}
+		newSnapshot := notes.ConversationSnapshot{
+			PaperID:    paperID,
+			PaperTitle: title,
+			CapturedAt: time.Now(),
+		}
+		if err := notes.SaveConversationSnapshots(path, []notes.ConversationSnapshot{newSnapshot}); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	}
 }
 

@@ -311,25 +311,6 @@ func highlightMatches(content string, matches []matchRange, current int) string 
 	return b.String()
 }
 
-func applyLineHighlights(content string, cursor int, selectionStart, selectionEnd int, hasSelection bool) string {
-	if content == "" {
-		return content
-	}
-	lines := strings.Split(content, "\n")
-	for idx, line := range lines {
-		inSelection := hasSelection && idx >= selectionStart && idx <= selectionEnd
-		switch {
-		case idx == cursor && inSelection:
-			lines[idx] = currentLineStyle.Render(line)
-		case idx == cursor:
-			lines[idx] = currentLineStyle.Render(line)
-		case inSelection:
-			lines[idx] = selectionLineStyle.Render(line)
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 func lineNumberAtOffset(content string, offset int) int {
 	if offset <= 0 {
 		return 0

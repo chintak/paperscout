@@ -30,7 +30,7 @@ func TestPaperScoutInitialHelpSnapshot(t *testing.T) {
 		Width:   100,
 		Height:  32,
 		Steps: []tuitest.Step{
-			{Delay: 1500 * time.Millisecond},
+			{Delay: 2500 * time.Millisecond},
 			{Input: tuitest.KeyCtrlC},
 		},
 		Timeout:        5 * time.Second,

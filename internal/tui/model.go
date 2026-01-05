@@ -450,10 +450,6 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	handled := true
 	switch key.String() {
-	case "up", "k":
-		m.moveCursor(-1)
-	case "down", "j":
-		m.moveCursor(1)
 	case "a":
 		return m, m.actionSummarizeCmd()
 	case "q":
@@ -741,8 +737,6 @@ func (m *model) refreshViewport() {
 		m.searchMatches = nil
 		m.searchMatchIdx = -1
 	}
-	start, end, hasSelection := m.selectionRange()
-	content = applyLineHighlights(content, m.cursorLine, start, end, hasSelection)
 	m.viewport.SetContent(content)
 	targetYOffset := prevYOffset
 	if forcedYOffset >= 0 {
@@ -779,82 +773,6 @@ func (m *model) refreshTranscript() {
 		}
 		m.transcriptViewport.SetYOffset(offset)
 	}
-}
-
-func (m *model) ensureCursorVisible() {
-	if m.lineCount == 0 {
-		return
-	}
-	line := m.cursorLine
-	if line < 0 {
-		line = 0
-	}
-	if line < m.viewport.YOffset {
-		m.viewport.SetYOffset(line)
-		return
-	}
-	lowerBound := m.viewport.YOffset + m.viewport.Height - 1
-	if line > lowerBound {
-		target := line - m.viewport.Height + 1
-		if target < 0 {
-			target = 0
-		}
-		m.viewport.SetYOffset(target)
-	}
-}
-
-func (m *model) moveCursor(delta int) {
-	if m.lineCount == 0 {
-		return
-	}
-	target := m.cursorLine + delta
-	if target < 0 {
-		target = 0
-	}
-	if target >= m.lineCount {
-		target = m.lineCount - 1
-	}
-	if target == m.cursorLine {
-		m.clearSelection()
-		return
-	}
-	m.cursorLine = target
-	m.clearSelection()
-	m.markViewportDirty()
-	m.refreshViewportIfDirty()
-	m.ensureCursorVisible()
-}
-
-func (m *model) setCursorLine(line int) {
-	if m.lineCount == 0 {
-		return
-	}
-	if line < 0 {
-		line = 0
-	}
-	if line >= m.lineCount {
-		line = m.lineCount - 1
-	}
-	if line == m.cursorLine {
-		return
-	}
-	m.cursorLine = line
-	m.clearSelection()
-	m.markViewportDirty()
-	m.refreshViewportIfDirty()
-	m.ensureCursorVisible()
-}
-
-func (m *model) suggestionAtCursor() (int, bool) {
-	if len(m.suggestions) == 0 {
-		return 0, false
-	}
-	for idx := range m.suggestions {
-		if line, ok := m.suggestionLines[idx]; ok && line == m.cursorLine {
-			return idx, true
-		}
-	}
-	return 0, false
 }
 
 func (m *model) startNoteEntry(prefill string) {
@@ -1013,7 +931,7 @@ func (m *model) jumpToRelativeSection(delta int) {
 		m.infoMessage = "No sections available yet."
 		return
 	}
-	currentLine := m.cursorLine
+	currentLine := m.viewport.YOffset
 	if delta > 0 {
 		for _, anchor := range anchors {
 			line := m.sectionAnchors[anchor]
@@ -2158,7 +2076,6 @@ var (
 	legendBoxStyle                 = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#56526e")).Padding(1, 2)
 	helpBoxStyle                   = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("#7f5af0")).Padding(1, 2)
 	currentLineStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6"))
-	selectionLineStyle             = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#bde0fe"))
 	persistedSuggestionStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#a3be8c")).Italic(true)
 	logoFaceStyle                  = lipgloss.NewStyle().Bold(true).Foreground(heroTextColor).Background(heroEmberColor)
 	logoShadowStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("#110600"))

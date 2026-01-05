@@ -151,22 +151,22 @@ func (m *model) buildDisplayContent() displayView {
 	m.writeConversationStream(cb)
 
 	renderBullets := func(items []string) {
-		for _, item := range items {
+		for idx, item := range items {
 			formatted := formatConversationEntry(item, bulletWrap)
 			lines := splitLinesPreserve(formatted)
-			first := true
 			for _, line := range lines {
 				if line == "" {
 					cb.WriteRune('\n')
 					continue
 				}
-				if first {
-					cb.WriteString(" • ")
-					first = false
-				} else {
-					cb.WriteString("   ")
+				plain := strings.TrimSpace(stripANSI(line))
+				if !isMarkdownTableLine(plain) {
+					cb.WriteString("  ")
 				}
 				cb.WriteString(line)
+				cb.WriteRune('\n')
+			}
+			if idx < len(items)-1 {
 				cb.WriteRune('\n')
 			}
 		}

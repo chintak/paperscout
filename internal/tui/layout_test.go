@@ -44,7 +44,7 @@ func TestPageLayoutUpdate(t *testing.T) {
 
 func TestFormatConversationEntryMarkdown(t *testing.T) {
 	input := "**Bold** and *italic*\n- item one\n[Docs](https://example.com)"
-	got := formatConversationEntry(input, 80)
+	got := stripANSI(formatConversationEntry(input, 80))
 	want := "Bold and italic\n• item one\nDocs (https://example.com)"
 	if got != want {
 		t.Fatalf("formatted output mismatch:\n%s", got)
@@ -53,7 +53,7 @@ func TestFormatConversationEntryMarkdown(t *testing.T) {
 
 func TestFormatConversationEntryMarkdownBlocks(t *testing.T) {
 	input := "### **Title**\n> quoted line\n`inline` and ~~strike~~\n| Col | Val |\n```go\nfunc main() {}\n```"
-	got := formatConversationEntry(input, 20)
+	got := stripANSI(formatConversationEntry(input, 20))
 	want := "Title\nquoted line\ninline and strike\n| Col | Val |\nfunc main() {}"
 	if got != want {
 		t.Fatalf("formatted output mismatch:\n%s", got)
@@ -68,13 +68,14 @@ func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
 		},
 	}
 	view := m.buildDisplayContent()
-	if strings.Contains(view.content, "###") || strings.Contains(view.content, "**") {
-		t.Fatalf("markdown markers should be stripped:\n%s", view.content)
+	content := stripANSI(view.content)
+	if strings.Contains(content, "###") || strings.Contains(content, "**") {
+		t.Fatalf("markdown markers should be stripped:\n%s", content)
 	}
-	if !strings.Contains(view.content, "Title") {
-		t.Fatalf("expected title content in output:\n%s", view.content)
+	if !strings.Contains(content, "Title") {
+		t.Fatalf("expected title content in output:\n%s", content)
 	}
-	if !strings.Contains(view.content, "| Col | Val |") {
-		t.Fatalf("expected table line in output:\n%s", view.content)
+	if !strings.Contains(content, "| Col | Val |") {
+		t.Fatalf("expected table line in output:\n%s", content)
 	}
 }

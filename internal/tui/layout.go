@@ -79,6 +79,17 @@ type contentBuilder struct {
 	lines   int
 }
 
+type markdownLineKind int
+
+const (
+	markdownLinePlain markdownLineKind = iota
+	markdownLineHeading
+	markdownLineBullet
+	markdownLineTable
+	markdownLineQuote
+	markdownLineCode
+)
+
 func (m *model) writeConversationStream(cb *contentBuilder) {
 	if len(m.transcriptEntries) == 0 {
 		return
@@ -308,21 +319,33 @@ func formatConversationEntry(content string, wrap int) string {
 			continue
 		}
 		if inCodeBlock {
-			rendered = append(rendered, line)
+			rendered = append(rendered, markdownCodeStyle.Render(line))
 			continue
 		}
-		formatted := formatMarkdownLine(line)
-		if wrap > 0 && !strings.Contains(line, "|") {
+		formatted, kind := formatMarkdownLineWithKind(line)
+		if wrap > 0 && kind != markdownLineTable {
 			formatted = wordwrap.String(formatted, wrap)
 		}
-		rendered = append(rendered, formatted)
+		rendered = append(rendered, styleMarkdownLine(formatted, kind))
 	}
 	return strings.Join(rendered, "\n")
 }
 
-func formatMarkdownLine(line string) string {
+func formatMarkdownLineWithKind(line string) (string, markdownLineKind) {
 	if line == "" {
-		return ""
+		return "", markdownLinePlain
+	}
+	trimmed := strings.TrimSpace(line)
+	kind := markdownLinePlain
+	switch {
+	case markdownHeadingPattern.MatchString(trimmed):
+		kind = markdownLineHeading
+	case markdownBulletPattern.MatchString(line):
+		kind = markdownLineBullet
+	case isMarkdownTableLine(trimmed):
+		kind = markdownLineTable
+	case markdownQuotePattern.MatchString(trimmed):
+		kind = markdownLineQuote
 	}
 	line = markdownHeadingPattern.ReplaceAllString(line, "")
 	line = markdownQuotePattern.ReplaceAllString(line, "")
@@ -341,7 +364,35 @@ func formatMarkdownLine(line string) string {
 	line = strings.ReplaceAll(line, "__", "")
 	line = strings.ReplaceAll(line, "~~", "")
 	line = strings.ReplaceAll(line, "`", "")
-	return line
+	return line, kind
+}
+
+func isMarkdownTableLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.Count(trimmed, "|") >= 2
+}
+
+func styleMarkdownLine(line string, kind markdownLineKind) string {
+	switch kind {
+	case markdownLineHeading:
+		return markdownHeadingStyle.Render(line)
+	case markdownLineBullet:
+		return styleBulletLine(line)
+	case markdownLineTable:
+		return markdownTableStyle.Render(line)
+	case markdownLineQuote:
+		return markdownQuoteStyle.Render(line)
+	default:
+		return line
+	}
+}
+
+func styleBulletLine(line string) string {
+	idx := strings.Index(line, "•")
+	if idx == -1 {
+		return markdownBulletStyle.Render(line)
+	}
+	return line[:idx] + markdownBulletStyle.Render("•") + line[idx+len("•"):]
 }
 
 func previewText(value string, limit int) string {

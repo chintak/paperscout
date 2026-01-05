@@ -1983,6 +1983,11 @@ var (
 	composerBlurredTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
 	composerPlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1c27a")).Italic(true)
 	composerPromptStyle      = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
+	markdownHeadingStyle     = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
+	markdownBulletStyle      = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Bold(true)
+	markdownTableStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#d9b56c"))
+	markdownQuoteStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0a08a")).Italic(true)
+	markdownCodeStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
 
 	logoArtLines = []string{
 		"██████╗    █████╗   ██████╗   ███████╗  ██████╗   ███████╗   ██████╗   ██████╗   ██╗   ██╗  ████████╗  ",

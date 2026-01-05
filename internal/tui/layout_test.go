@@ -67,6 +67,24 @@ func TestFormatConversationEntryNestedLists(t *testing.T) {
 	}
 }
 
+func TestFormatConversationEntryCollapsesListBlankLines(t *testing.T) {
+	input := "- item one\n\n- item two\n\n\nParagraph"
+	got := stripANSI(formatConversationEntry(input, 80))
+	want := "• item one\n• item two\n\nParagraph"
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}
+
+func TestFormatConversationEntryPreservesIndentedLines(t *testing.T) {
+	input := "  indented line\n    deeper line"
+	got := stripANSI(formatConversationEntry(input, 80))
+	want := "  indented line\n    deeper line"
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}
+
 func TestFormatConversationEntryTableAlignment(t *testing.T) {
 	input := "| Col | Val |\n| --- | ---- |\n| A | 1 |\n| Long | 22 |"
 	got := stripANSI(formatConversationEntry(input, 80))

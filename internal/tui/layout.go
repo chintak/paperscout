@@ -240,6 +240,8 @@ func formatConversationEntry(content string, wrap int) string {
 	lines := splitLinesPreserve(content)
 	rendered := make([]string, 0, len(lines))
 	inCodeBlock := false
+	lastNonBlank := markdownLinePlain
+	lastRenderedBlank := false
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
@@ -248,9 +250,26 @@ func formatConversationEntry(content string, wrap int) string {
 			continue
 		}
 		if trimmed == "" {
+			if inCodeBlock {
+				rendered = append(rendered, "")
+				lastRenderedBlank = true
+				continue
+			}
+			nextKind := nextNonBlankKind(lines, i+1)
+			if lastRenderedBlank {
+				continue
+			}
+			if isListOrTableKind(lastNonBlank) && isListOrTableKind(nextKind) {
+				continue
+			}
+			if isListOrTableKind(nextKind) {
+				continue
+			}
 			rendered = append(rendered, "")
+			lastRenderedBlank = true
 			continue
 		}
+		lastRenderedBlank = false
 		if inCodeBlock {
 			rendered = append(rendered, markdownCodeStyle.Render(line))
 			continue
@@ -269,6 +288,7 @@ func formatConversationEntry(content string, wrap int) string {
 			continue
 		}
 		formatted := formatMarkdownLineWithKind(line)
+		lastNonBlank = formatted.kind
 		content := formatted.text
 		if wrap > 0 && formatted.kind != markdownLineTable {
 			if formatted.prefix != "" {
@@ -286,6 +306,8 @@ func formatMarkdownLineWithKind(line string) markdownLine {
 	if line == "" {
 		return markdownLine{text: "", kind: markdownLinePlain}
 	}
+	rawIndent := leadingIndent(line)
+	normalizedIndent := normalizeIndent(rawIndent)
 	trimmed := strings.TrimSpace(line)
 	kind := markdownLinePlain
 	prefix := ""
@@ -305,12 +327,16 @@ func formatMarkdownLineWithKind(line string) markdownLine {
 	line = markdownQuotePattern.ReplaceAllString(line, "")
 	if matches := markdownBulletPattern.FindStringSubmatch(line); matches != nil {
 		rest := strings.TrimSpace(line[len(matches[0]):])
-		prefix = matches[1] + "• "
+		prefix = normalizedIndent + "• "
 		line = prefix + rest
 	} else if matches := markdownOrderedListPattern.FindStringSubmatch(line); matches != nil {
 		rest := strings.TrimSpace(line[len(matches[0]):])
-		prefix = matches[1] + matches[2] + " "
+		prefix = normalizedIndent + matches[2] + " "
 		line = prefix + rest
+	} else if normalizedIndent != "" && kind == markdownLinePlain {
+		rest := strings.TrimLeft(line, " \t")
+		prefix = normalizedIndent
+		line = prefix + strings.TrimSpace(rest)
 	}
 	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
 	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
@@ -324,6 +350,56 @@ func formatMarkdownLineWithKind(line string) markdownLine {
 	line = strings.ReplaceAll(line, "~~", "")
 	line = strings.ReplaceAll(line, "`", "")
 	return markdownLine{text: line, kind: kind, prefix: prefix}
+}
+
+func nextNonBlankKind(lines []string, start int) markdownLineKind {
+	for i := start; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			continue
+		}
+		return markdownKindForRaw(lines[i])
+	}
+	return markdownLinePlain
+}
+
+func markdownKindForRaw(line string) markdownLineKind {
+	trimmed := strings.TrimSpace(line)
+	switch {
+	case markdownHeadingPattern.MatchString(trimmed):
+		return markdownLineHeading
+	case markdownBulletPattern.MatchString(line):
+		return markdownLineBullet
+	case markdownOrderedListPattern.MatchString(line):
+		return markdownLineOrdered
+	case isMarkdownTableLine(trimmed):
+		return markdownLineTable
+	case markdownQuotePattern.MatchString(trimmed):
+		return markdownLineQuote
+	default:
+		return markdownLinePlain
+	}
+}
+
+func isListOrTableKind(kind markdownLineKind) bool {
+	return kind == markdownLineBullet || kind == markdownLineOrdered || kind == markdownLineTable
+}
+
+func leadingIndent(line string) string {
+	for i, r := range line {
+		if r != ' ' && r != '\t' {
+			return line[:i]
+		}
+	}
+	return line
+}
+
+func normalizeIndent(indent string) string {
+	if indent == "" {
+		return ""
+	}
+	normalized := strings.ReplaceAll(indent, "\t", "  ")
+	return normalized
 }
 
 func isMarkdownTableLine(line string) bool {

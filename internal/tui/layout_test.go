@@ -117,3 +117,20 @@ func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
 		t.Fatalf("expected table line in output:\n%s", content)
 	}
 }
+
+func TestFormatConversationEntryClickableURLs(t *testing.T) {
+	input := "See [Docs](https://example.com) and https://golang.org."
+	got := stripANSI(formatConversationEntry(input, 80))
+	want := "See Docs (https://example.com) and https://golang.org."
+	if got != want {
+		t.Fatalf("formatted output mismatch:\n%s", got)
+	}
+}
+
+func TestStripANSIHandlesHyperlinks(t *testing.T) {
+	url := "https://example.com"
+	raw := renderClickableURL(url)
+	if stripANSI(raw) != url {
+		t.Fatalf("stripANSI did not remove hyperlink sequences: %v", raw)
+	}
+}

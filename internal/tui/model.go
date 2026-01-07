@@ -1080,7 +1080,7 @@ func (m *model) copySelectionToClipboard() {
 	m.infoMessage = "Selection copied to clipboard."
 }
 
-var ansiEscapeCodes = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+var ansiEscapeCodes = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\x1b\]8;;.*?\x1b\\`)
 
 func stripANSI(text string) string {
 	return ansiEscapeCodes.ReplaceAllString(text, "")
@@ -2231,6 +2231,7 @@ var (
 	markdownItalicStyle        = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("#f1c27a"))
 	markdownInlineCodeStyle    = lipgloss.NewStyle().Foreground(heroTextColor).Background(lipgloss.Color("#1c1c1c"))
 	latexStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("#8ecae6")).Bold(true)
+	linkStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("#93d7ff")).Underline(true)
 	markdownStrikethroughStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("#b0a08a"))
 
 	logoArtLines = []string{

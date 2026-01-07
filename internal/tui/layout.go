@@ -24,6 +24,7 @@ var (
 	markdownStrikethroughPattern  = regexp.MustCompile(`~~([^~]+)~~`)
 	latexInlineDoublePattern      = regexp.MustCompile(`\$\$([^$]+)\$\$`)
 	latexInlineSinglePattern      = regexp.MustCompile(`\$([^$]+)\$`)
+	plainURLPattern               = regexp.MustCompile(`https?://[^\s\)\]\}]+`)
 )
 
 type pageLayout struct {
@@ -299,6 +300,9 @@ func formatConversationEntry(content string, wrap int) string {
 				content = wordwrap.String(content, wrap)
 			}
 		}
+		if formatted.kind != markdownLineTable {
+			content = renderInlineLinks(content)
+		}
 		rendered = append(rendered, styleMarkdownLine(content, formatted.kind))
 	}
 	return strings.Join(rendered, "\n")
@@ -340,7 +344,6 @@ func formatMarkdownLineWithKind(line string) markdownLine {
 		prefix = normalizedIndent
 		line = prefix + strings.TrimSpace(rest)
 	}
-	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
 	line = stylizeInlineElements(line)
 	return markdownLine{text: line, kind: kind, prefix: prefix}
 }
@@ -496,7 +499,6 @@ func isMarkdownTableDivider(cells []string) bool {
 
 func formatMarkdownInline(text string) string {
 	line := strings.TrimSpace(text)
-	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
 	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
 	line = markdownStrikethroughPattern.ReplaceAllString(line, "$1")
 	line = markdownBoldPattern.ReplaceAllString(line, "$1")
@@ -507,6 +509,7 @@ func formatMarkdownInline(text string) string {
 	line = strings.ReplaceAll(line, "__", "")
 	line = strings.ReplaceAll(line, "~~", "")
 	line = strings.ReplaceAll(line, "`", "")
+	line = renderInlineLinks(line)
 	return line
 }
 
@@ -537,6 +540,65 @@ func stylizeInlineElements(line string) string {
 	line = markdownItalicUnderscore.ReplaceAllString(line, markdownItalicStyle.Render("$1"))
 	line = markdownStrikethroughPattern.ReplaceAllString(line, markdownStrikethroughStyle.Render("$1"))
 	return line
+}
+
+func renderInlineLinks(line string) string {
+	line = renderMarkdownLinks(line)
+	return renderPlainURLs(line)
+}
+
+func renderMarkdownLinks(line string) string {
+	return markdownLinkPattern.ReplaceAllStringFunc(line, func(match string) string {
+		matches := markdownLinkPattern.FindStringSubmatch(match)
+		if len(matches) != 3 {
+			return match
+		}
+		label := strings.TrimSpace(matches[1])
+		url := strings.TrimSpace(matches[2])
+		if url == "" {
+			return label
+		}
+		if label == "" {
+			label = url
+		}
+		if label == url {
+			return url
+		}
+		return fmt.Sprintf("%s (%s)", label, url)
+	})
+}
+
+func renderPlainURLs(line string) string {
+	return plainURLPattern.ReplaceAllStringFunc(line, func(found string) string {
+		url, suffix := splitURLSuffix(found)
+		if url == "" {
+			return found
+		}
+		return renderClickableURL(url) + suffix
+	})
+}
+
+func splitURLSuffix(raw string) (string, string) {
+	suffix := ""
+	for len(raw) > 0 {
+		r, size := utf8.DecodeLastRuneInString(raw)
+		if strings.ContainsRune(".,;:!?", r) {
+			suffix = string(r) + suffix
+			raw = raw[:len(raw)-size]
+			continue
+		}
+		break
+	}
+	return raw, suffix
+}
+
+func renderClickableURL(url string) string {
+	const (
+		hyperlinkPrefix = "\x1b]8;;"
+		hyperlinkTerm   = "\x1b\\"
+	)
+	styled := linkStyle.Render(url)
+	return fmt.Sprintf("%s%s%s%s%s%s", hyperlinkPrefix, url, hyperlinkTerm, styled, hyperlinkPrefix, hyperlinkTerm)
 }
 
 func styleBulletLine(line string) string {

@@ -90,13 +90,13 @@ func (c *ollamaClient) StreamBriefSection(ctx context.Context, kind BriefSection
 	var builder strings.Builder
 	return c.streamGenerate(ctx, prompt, func(chunk string, done bool) error {
 		builder.WriteString(chunk)
-		bullets := parseBulletLines(builder.String())
-		if len(bullets) == 0 && !done {
+		content := strings.TrimSpace(builder.String())
+		if content == "" && !done {
 			return nil
 		}
 		return handler(BriefSectionDelta{
 			Kind:    kind,
-			Bullets: bullets,
+			Bullets: []string{content},
 			Done:    done,
 		})
 	})

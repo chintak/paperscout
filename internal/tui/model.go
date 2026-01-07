@@ -1270,29 +1270,57 @@ func (m *model) updateBriefContent(kind llm.BriefSectionKind, bullets []string) 
 	}
 }
 
-var briefListPrefixPattern = regexp.MustCompile(`^\s*(?:[-*+]|[0-9]+[.)])\s+`)
-
 func briefMessageContent(kind llm.BriefSectionKind, bullets []string) string {
 	return briefMessageContentWithNotice(kind, bullets, "")
 }
 
 func briefMessageContentWithNotice(kind llm.BriefSectionKind, bullets []string, notice string) string {
 	title := briefSectionTitle(kind)
-	if len(bullets) == 0 && strings.TrimSpace(notice) == "" {
-		return fmt.Sprintf("%s ready.", title)
-	}
 	lines := []string{fmt.Sprintf("### %s", title)}
 	if trimmed := strings.TrimSpace(notice); trimmed != "" {
 		lines = append(lines, fmt.Sprintf("> %s", trimmed))
 	}
-	for _, bullet := range bullets {
-		trimmed := strings.TrimSpace(briefListPrefixPattern.ReplaceAllString(bullet, ""))
+	cleaned := dedupeLines(bullets)
+	if len(cleaned) == 0 {
+		if notice == "" {
+			return fmt.Sprintf("%s ready.", title)
+		}
+		return strings.Join(lines, "\n")
+	}
+	if kind == llm.BriefSummary && len(cleaned) > 5 {
+		cleaned = cleaned[:5]
+	}
+	for _, bullet := range cleaned {
+		trimmed := strings.TrimSpace(bullet)
 		if trimmed == "" {
 			continue
 		}
-		lines = append(lines, "- "+trimmed)
+		lines = append(lines, trimmed)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func dedupeLines(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(lines))
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func briefMessageKind(content string) (llm.BriefSectionKind, bool) {

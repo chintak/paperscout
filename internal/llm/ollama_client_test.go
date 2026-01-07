@@ -174,8 +174,8 @@ func TestOllamaClientBriefSection(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if !strings.Contains(payload.Prompt, "- bullet 1") && !strings.Contains(payload.Prompt, "Format:") {
-			t.Fatalf("prompt missing bullet format: %s", payload.Prompt)
+		if !strings.Contains(payload.Prompt, "structured bullet lists") {
+			t.Fatalf("prompt missing structured bullet instruction: %s", payload.Prompt)
 		}
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -193,7 +193,7 @@ func TestOllamaClientBriefSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("brief section failed: %v", err)
 	}
-	if len(items) != 2 || items[0] != "bullet one" {
+	if len(items) != 2 || items[0] != "- bullet one" {
 		t.Fatalf("unexpected items: %#v", items)
 	}
 }
@@ -231,7 +231,11 @@ func TestOllamaClientStreamBriefSection(t *testing.T) {
 	if !deltas[len(deltas)-1].Done {
 		t.Fatal("final delta should be marked done")
 	}
-	if len(deltas[len(deltas)-1].Bullets) != 2 {
-		t.Fatalf("final bullets missing: %#v", deltas[len(deltas)-1].Bullets)
+	final := deltas[len(deltas)-1].Bullets
+	if len(final) != 1 {
+		t.Fatalf("expected final update to contain single combined string, got %d entries", len(final))
+	}
+	if !strings.Contains(final[0], "- second bullet") {
+		t.Fatalf("final string missing second bullet: %q", final[0])
 	}
 }

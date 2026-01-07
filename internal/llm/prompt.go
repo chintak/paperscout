@@ -135,11 +135,12 @@ func buildBriefPrompt(title, context string) string {
 		title = "the paper"
 	}
 	return fmt.Sprintf(`You are guiding a researcher through S. Keshav's three-pass reading method.
-Summarize the paper into three sections with concise bullet lists as described:
-- summary: exactly 3 bullets. Bullet 1 states the problem domain & strongest competing prior work. Bullet 2 describes the proposed approach + key contributions. Bullet 3 states evaluation metrics + quantitative improvement over baselines.
-- technical: 3-5 bullets detailing assumptions, datasets, model architecture, training/eval protocol, and reproducibility notes. Highlight key phrases using **bold** markdown.
-- deepDive: 3 influential cited or related works to study next, each noting the insight they provide.
-Return ONLY JSON formatted as {"summary":[""],"technical":[""],"deepDive":[""]} with non-empty strings.
+Craft each section with structured markdown: start with "### Summary", "### Technical", or "### Deep Dive" and follow with nested bullet lists using two-space indentation per level.
+- Summary: return exactly 3-5 top-level bullets that cover the problem domain, key contributions/approach, and evaluation/metrics. Keep each bullet focused; use nested sub-bullets for clarifications or comparisons.
+	- Technical: deliver 3-7 bullets covering assumptions, datasets, architecture, training/evaluation protocols, metrics, and reproducibility notes; include inline `+"`code`"+`, $LaTeX$, and tables when helpful.
+- Deep Dive: provide 3 bullets naming cited or related works with the insight they add; use nested bullet points for follow-up resource types or takeaways.
+Highlight crucial phrases with **bold** and avoid bulletizing every line of prose.
+Return ONLY JSON formatted as {"summary":[""],"technical":[""],"deepDive":[""]}. Each string may contain multi-line markdown content (headings, lists, tables, code, equations).
 
 Paper title: %s
 
@@ -177,29 +178,30 @@ func buildBriefSectionPrompt(kind BriefSectionKind, title, context string) strin
 		title = "the paper"
 	}
 	var directives string
+	var heading string
 	switch kind {
 	case BriefSummary:
-		directives = "Return exactly 3 bullets focused on (1) problem domain + strongest prior, (2) proposed approach + key contributions, (3) evaluation metrics + quantitative gains."
+		heading = "### Summary"
+		directives = "Return 3-5 concise top-level bullets covering the problem domain, leading prior work, the proposed approach with key contributions, and evaluation results. Use two-space indents for nested clarifications."
 	case BriefTechnical:
-		directives = "Return 3-5 bullets covering assumptions, datasets, model architecture, and evaluation/reproducibility details. Highlight crucial metrics using **bold** markdown sparingly."
+		heading = "### Technical"
+		directives = "Return 3-7 bullets covering assumptions, dataset details, architecture, training/evaluation protocols, and reproducibility cues. Include nested sub-bullets (two spaces per depth) and feel free to embed inline `code`, $LaTeX$, and markdown tables for clarity."
 	case BriefDeepDive:
-		directives = "Return exactly 3 influential cited or related works to study next. Each bullet names the work and states the insight or why it matters."
+		heading = "### Deep Dive"
+		directives = "Return exactly 3 bullets describing influential cited or related works, each noting the insight or why it matters. Use nested sub-bullets to highlight follow-up resources or comparisons."
 	default:
+		heading = "### Summary"
 		directives = "Return 3 concise bullets summarizing the paper."
 	}
 	return fmt.Sprintf(`You are guiding a researcher through S. Keshav's three-pass reading method.
-Write the %s section with tight bullets that obey:
+Write the %s section as standalone markdown that begins with "%s" followed by structured bullet lists (top-level bullets prefixed with "- " and nested bullets indented by two additional spaces).
 %s
-Format:
-- bullet 1
-- bullet 2
-- bullet 3
-Do NOT wrap output in JSON or prose; emit only the bullet lines.
+Avoid wrapping the output in JSON or prose; emit only the markdown lines.
 
 Paper title: %s
 
 Context:
-%s`, sectionLabel(kind), directives, title, context)
+%s`, sectionLabel(kind), heading, directives, title, context)
 }
 
 func sectionLabel(kind BriefSectionKind) string {
@@ -254,42 +256,43 @@ func parseBriefSection(raw string) ([]string, error) {
 			}
 		}
 	}
-	if lines := parseBulletLines(raw); len(lines) > 0 {
+	if lines := parseSimpleBulletList(raw); len(lines) > 0 {
 		return lines, nil
 	}
-	return nil, fmt.Errorf("unable to parse brief section payload")
+	return []string{raw}, nil
 }
 
 func sanitizeBullets(items []string) []string {
 	var cleaned []string
 	for _, item := range items {
+		item = strings.ReplaceAll(item, "\r\n", "\n")
+		item = strings.ReplaceAll(item, "\r", "\n")
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
 		}
-		item = whitespaceRe.ReplaceAllString(item, " ")
 		cleaned = append(cleaned, item)
 	}
 	return cleaned
 }
 
-func parseBulletLines(raw string) []string {
+func parseSimpleBulletList(raw string) []string {
 	lines := strings.Split(raw, "\n")
-	var cleaned []string
+	var bullets []string
 	for _, line := range lines {
-		line = strings.TrimSpace(strings.Trim(line, ","))
-		if line == "" {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
 			continue
 		}
-		line = strings.TrimPrefix(line, "- ")
-		line = strings.Trim(line, `"`+"`")
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+		if !strings.HasPrefix(trimmed, "- ") {
+			if len(bullets) == 0 {
+				return nil
+			}
+			return nil
 		}
-		cleaned = append(cleaned, line)
+		bullets = append(bullets, strings.TrimRight(line, " \t"))
 	}
-	return sanitizeBullets(cleaned)
+	return bullets
 }
 
 func extractQuestionContext(content, question string, limit int) string {

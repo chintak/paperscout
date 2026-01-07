@@ -651,6 +651,23 @@ func TestComposerHeightWrapsInput(t *testing.T) {
 	}
 }
 
+func TestBriefMessageContentLimitsSummaryBullets(t *testing.T) {
+	bullets := []string{"one", "two", "three", "four", "five", "six"}
+	content := briefMessageContent(llm.BriefSummary, bullets)
+	lines := strings.Split(content, "\n")
+	count := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "###") || strings.HasPrefix(trimmed, ">") {
+			continue
+		}
+		count++
+	}
+	if count > 5 {
+		t.Fatalf("expected at most 5 summary lines, got %d", count)
+	}
+}
+
 func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m := newTestModel(t)
 	m.config.LLM = fakeLLM{}

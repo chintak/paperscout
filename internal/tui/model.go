@@ -95,7 +95,6 @@ func New(config Config) tea.Model {
 		sectionAnchors:          map[string]int{},
 		pendingFocusAnchor:      "",
 		jobBus:                  newJobBus(),
-		jobSnapshots:            map[jobKind]jobSnapshot{},
 		layout:                  newPageLayout(),
 		paletteInput:            paletteInput,
 		transcriptViewportDirty: true,
@@ -149,7 +148,6 @@ type model struct {
 	mouseSelectionActive    bool
 	pendingFocusAnchor      string
 	jobBus                  *jobBus
-	jobSnapshots            map[jobKind]jobSnapshot
 	layout                  pageLayout
 	paletteInput            textinput.Model
 	paletteMatches          []uiCommand
@@ -252,10 +250,8 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case jobSignalMsg:
-		m.recordJobSnapshot(msg.Snapshot)
 		return m, nil
 	case jobResultEnvelope:
-		m.recordJobSnapshot(msg.Snapshot)
 		if msg.Payload == nil {
 			return m, nil
 		}
@@ -2162,87 +2158,6 @@ func (m *model) handleJobPayload(payload tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
-}
-
-func (m *model) recordJobSnapshot(snapshot jobSnapshot) {
-	if m.jobSnapshots == nil {
-		m.jobSnapshots = map[jobKind]jobSnapshot{}
-	}
-	m.jobSnapshots[snapshot.Kind] = snapshot
-}
-
-func (m *model) jobStatusBadges() []string {
-	if len(m.jobSnapshots) == 0 {
-		return nil
-	}
-	order := []jobKind{
-		jobKindFetch,
-		jobKindZettel,
-		jobKindBriefSummary,
-		jobKindBriefTechnical,
-		jobKindBriefDeepDive,
-		jobKindSuggest,
-		jobKindSave,
-		jobKindQuestion,
-	}
-	var badges []string
-	for _, kind := range order {
-		snapshot, ok := m.jobSnapshots[kind]
-		if !ok {
-			continue
-		}
-		switch snapshot.Status {
-		case jobStatusRunning:
-			elapsed := time.Since(snapshot.StartedAt)
-			badges = append(badges, fmt.Sprintf("%s ▶ %s", jobKindLabel(kind), humanDuration(elapsed)))
-		case jobStatusSucceeded:
-			badges = append(badges, fmt.Sprintf("%s ✓ %s", jobKindLabel(kind), humanDuration(snapshot.Duration)))
-		case jobStatusFailed:
-			label := fmt.Sprintf("%s ✗ %s", jobKindLabel(kind), humanDuration(snapshot.Duration))
-			if snapshot.Err != "" {
-				label = fmt.Sprintf("%s (%s)", label, snapshot.Err)
-			}
-			badges = append(badges, label)
-		}
-	}
-	return badges
-}
-
-func jobKindLabel(kind jobKind) string {
-	switch kind {
-	case jobKindFetch:
-		return "fetch"
-	case jobKindBriefSummary:
-		return "brief:summary"
-	case jobKindBriefTechnical:
-		return "brief:technical"
-	case jobKindBriefDeepDive:
-		return "brief:deepdive"
-	case jobKindSuggest:
-		return "suggest"
-	case jobKindSave:
-		return "save"
-	case jobKindZettel:
-		return "zettel"
-	case jobKindQuestion:
-		return "qa"
-	default:
-		return string(kind)
-	}
-}
-
-func humanDuration(d time.Duration) string {
-	if d >= time.Second {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	if d <= 0 {
-		return "0ms"
-	}
-	ms := d.Milliseconds()
-	if ms == 0 {
-		ms = 1
-	}
-	return fmt.Sprintf("%dms", ms)
 }
 
 func (m *model) clampYOffset(offset int) int {

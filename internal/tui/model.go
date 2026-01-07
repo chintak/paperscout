@@ -2330,16 +2330,21 @@ var (
 	composerCursorLineBlurredStyle = lipgloss.NewStyle().
 					Background(composerCursorLineBlurredColor).
 					Foreground(heroSecondaryTextColor)
-	composerFocusedTextStyle = lipgloss.NewStyle().Foreground(heroTextColor)
-	composerBlurredTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
-	composerPlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1c27a")).Italic(true)
-	composerPromptStyle      = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
-	markdownHeadingStyle     = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
-	markdownBulletStyle      = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Bold(true)
-	markdownTableStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#d9b56c"))
-	markdownTableHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f2c97d")).Bold(true)
-	markdownQuoteStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0a08a")).Italic(true)
-	markdownCodeStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
+	composerFocusedTextStyle   = lipgloss.NewStyle().Foreground(heroTextColor)
+	composerBlurredTextStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
+	composerPlaceholderStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1c27a")).Italic(true)
+	composerPromptStyle        = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
+	markdownHeadingStyle       = lipgloss.NewStyle().Foreground(heroAccentColor).Bold(true)
+	markdownBulletStyle        = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Bold(true)
+	markdownTableStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#d9b56c"))
+	markdownTableHeaderStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f2c97d")).Bold(true)
+	markdownQuoteStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#b0a08a")).Italic(true)
+	markdownCodeStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#d3b38a"))
+	markdownBoldStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffd166"))
+	markdownItalicStyle        = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("#f1c27a"))
+	markdownInlineCodeStyle    = lipgloss.NewStyle().Foreground(heroTextColor).Background(lipgloss.Color("#1c1c1c"))
+	latexStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("#8ecae6")).Bold(true)
+	markdownStrikethroughStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("#b0a08a"))
 
 	logoArtLines = []string{
 		"██████╗    █████╗   ██████╗   ███████╗  ██████╗   ███████╗   ██████╗   ██████╗   ██╗   ██╗  ████████╗  ",

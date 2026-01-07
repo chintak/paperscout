@@ -22,6 +22,8 @@ var (
 	markdownInlineCodePattern     = regexp.MustCompile("`([^`]+)`")
 	markdownQuotePattern          = regexp.MustCompile(`^\s*>\s+`)
 	markdownStrikethroughPattern  = regexp.MustCompile(`~~([^~]+)~~`)
+	latexInlineDoublePattern      = regexp.MustCompile(`\$\$([^$]+)\$\$`)
+	latexInlineSinglePattern      = regexp.MustCompile(`\$([^$]+)\$`)
 )
 
 type pageLayout struct {
@@ -339,16 +341,7 @@ func formatMarkdownLineWithKind(line string) markdownLine {
 		line = prefix + strings.TrimSpace(rest)
 	}
 	line = markdownLinkPattern.ReplaceAllString(line, "$1 ($2)")
-	line = markdownInlineCodePattern.ReplaceAllString(line, "$1")
-	line = markdownStrikethroughPattern.ReplaceAllString(line, "$1")
-	line = markdownBoldPattern.ReplaceAllString(line, "$1")
-	line = markdownBoldUnderscorePattern.ReplaceAllString(line, "$1")
-	line = markdownItalicPattern.ReplaceAllString(line, "$1")
-	line = markdownItalicUnderscore.ReplaceAllString(line, "$1")
-	line = strings.ReplaceAll(line, "**", "")
-	line = strings.ReplaceAll(line, "__", "")
-	line = strings.ReplaceAll(line, "~~", "")
-	line = strings.ReplaceAll(line, "`", "")
+	line = stylizeInlineElements(line)
 	return markdownLine{text: line, kind: kind, prefix: prefix}
 }
 
@@ -532,6 +525,18 @@ func styleMarkdownLine(line string, kind markdownLineKind) string {
 	default:
 		return line
 	}
+}
+
+func stylizeInlineElements(line string) string {
+	line = markdownInlineCodePattern.ReplaceAllString(line, markdownInlineCodeStyle.Render("$1"))
+	line = latexInlineDoublePattern.ReplaceAllString(line, latexStyle.Render("$1"))
+	line = latexInlineSinglePattern.ReplaceAllString(line, latexStyle.Render("$1"))
+	line = markdownBoldPattern.ReplaceAllString(line, markdownBoldStyle.Render("$1"))
+	line = markdownBoldUnderscorePattern.ReplaceAllString(line, markdownBoldStyle.Render("$1"))
+	line = markdownItalicPattern.ReplaceAllString(line, markdownItalicStyle.Render("$1"))
+	line = markdownItalicUnderscore.ReplaceAllString(line, markdownItalicStyle.Render("$1"))
+	line = markdownStrikethroughPattern.ReplaceAllString(line, markdownStrikethroughStyle.Render("$1"))
+	return line
 }
 
 func styleBulletLine(line string) string {

@@ -389,6 +389,158 @@ func TestHydrateConversationHistoryLoadsSnapshot(t *testing.T) {
 	}
 }
 
+func TestHydrateConversationHistoryRestoresBriefAndQA(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	now := time.Now().UTC()
+	snapshot := notes.ConversationSnapshot{
+		PaperID:    "5678",
+		PaperTitle: "Resume Fixture",
+		CapturedAt: now,
+		Messages: []notes.ConversationMessage{
+			{Kind: "question", Content: "What is the method?", Timestamp: now.Add(1 * time.Minute)},
+			{Kind: "answer", Content: "We use contrastive learning.", Timestamp: now.Add(2 * time.Minute)},
+		},
+		Brief: &notes.BriefSnapshot{
+			Summary:   []string{"Summary bullet"},
+			Technical: []string{"Technical bullet"},
+			DeepDive:  []string{"Deep dive bullet"},
+		},
+	}
+	if err := notes.SaveConversationSnapshots(path, []notes.ConversationSnapshot{snapshot}); err != nil {
+		t.Fatalf("SaveConversationSnapshots() error = %v", err)
+	}
+
+	m := newTestModel(t)
+	m.config.KnowledgeBasePath = path
+	m.paper = &arxiv.Paper{ID: "5678", Title: "Resume Fixture"}
+	m.hydrateConversationHistory()
+
+	if len(m.brief.Summary) != 1 || len(m.brief.Technical) != 1 || len(m.brief.DeepDive) != 1 {
+		t.Fatalf("expected brief sections restored, got %#v", m.brief)
+	}
+	if len(m.transcriptEntries) != 2 {
+		t.Fatalf("expected 2 transcript entries, got %d", len(m.transcriptEntries))
+	}
+	if m.transcriptEntries[0].Kind != "question" || m.transcriptEntries[1].Kind != "answer" {
+		t.Fatalf("expected question/answer transcript, got %#v", m.transcriptEntries)
+	}
+}
+
+func TestHydrateConversationHistoryMaintainsBriefAnchors(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	now := time.Now().UTC()
+	snapshot := notes.ConversationSnapshot{
+		PaperID:    "91011",
+		PaperTitle: "Brief Fixture",
+		CapturedAt: now,
+		Messages: []notes.ConversationMessage{
+			{Kind: "brief", Content: "### Summary\n- Summary bullet", Timestamp: now.Add(10 * time.Second)},
+			{Kind: "brief", Content: "### Technical\n- Technical bullet", Timestamp: now.Add(20 * time.Second)},
+			{Kind: "brief", Content: "### Deep Dive\n- Deep bullet", Timestamp: now.Add(30 * time.Second)},
+		},
+	}
+	if err := notes.SaveConversationSnapshots(path, []notes.ConversationSnapshot{snapshot}); err != nil {
+		t.Fatalf("SaveConversationSnapshots() error = %v", err)
+	}
+
+	m := newTestModel(t)
+	m.config.KnowledgeBasePath = path
+	m.paper = &arxiv.Paper{ID: "91011", Title: "Brief Fixture"}
+	m.hydrateConversationHistory()
+
+	if len(m.briefMessageIndex) != 3 {
+		t.Fatalf("expected 3 brief anchors, got %v", m.briefMessageIndex)
+	}
+	if _, ok := m.briefMessageIndex[llm.BriefSummary]; !ok {
+		t.Fatal("missing summary anchor")
+	}
+	if _, ok := m.briefMessageIndex[llm.BriefTechnical]; !ok {
+		t.Fatal("missing technical anchor")
+	}
+	if _, ok := m.briefMessageIndex[llm.BriefDeepDive]; !ok {
+		t.Fatal("missing deep dive anchor")
+	}
+}
+
+func TestHandlePaperResultResumesSnapshotInView(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	now := time.Date(2025, 5, 6, 7, 8, 9, 0, time.UTC)
+	snapshot := notes.ConversationSnapshot{
+		PaperID:    "1357.24680",
+		PaperTitle: "Resume Fixture",
+		CapturedAt: now,
+		Messages: []notes.ConversationMessage{
+			{Kind: "question", Content: "What is the method?", Timestamp: now.Add(1 * time.Minute)},
+			{Kind: "answer", Content: "We use contrastive learning.", Timestamp: now.Add(2 * time.Minute)},
+		},
+		Brief: &notes.BriefSnapshot{
+			Summary:   []string{"Summary bullet"},
+			Technical: []string{"Technical bullet"},
+			DeepDive:  []string{"Deep dive bullet"},
+		},
+	}
+	if err := notes.SaveConversationSnapshots(path, []notes.ConversationSnapshot{snapshot}); err != nil {
+		t.Fatalf("SaveConversationSnapshots() error = %v", err)
+	}
+
+	m := newTestModel(t)
+	m.config.KnowledgeBasePath = path
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = updated.(*model)
+
+	updated, _ = m.Update(paperResultMsg{
+		paper: &arxiv.Paper{
+			ID:       "1357.24680",
+			Title:    "Resume Fixture",
+			Abstract: "One sentence. Another sentence.",
+			FullText: "content",
+		},
+	})
+	m = updated.(*model)
+
+	view := m.View()
+	for _, token := range []string{
+		"Summary bullet",
+		"Technical bullet",
+		"Deep dive bullet",
+		"What is the method?",
+		"We use contrastive learning.",
+	} {
+		if !strings.Contains(view, token) {
+			t.Fatalf("expected view to contain %q\n%s", token, view)
+		}
+	}
+}
+
+func TestComposerWidthResizesWithViewport(t *testing.T) {
+	m := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updated.(*model)
+	wide := m.composer.Width()
+	if wide <= 0 {
+		t.Fatalf("expected composer width to be set, got %d", wide)
+	}
+
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	m = updated.(*model)
+	narrow := m.composer.Width()
+	if narrow <= 0 {
+		t.Fatalf("expected composer width to be set, got %d", narrow)
+	}
+	if narrow >= wide {
+		t.Fatalf("expected composer width to shrink (wide=%d, narrow=%d)", wide, narrow)
+	}
+}
+
 func TestHydrateConversationHistoryReportsInvalidJSON(t *testing.T) {
 	t.Parallel()
 

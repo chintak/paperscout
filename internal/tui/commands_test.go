@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/csheth/browse/internal/arxiv"
 	"github.com/csheth/browse/internal/llm"
@@ -140,5 +141,33 @@ func TestAppendConversationSnapshotJobPersistsBriefUpdates(t *testing.T) {
 	}
 	if len(snapshots[0].SectionMetadata) != 1 {
 		t.Fatalf("expected section metadata persisted: %#v", snapshots[0].SectionMetadata)
+	}
+}
+
+func TestAppendConversationSnapshotJobPersistsMessages(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	paper := &arxiv.Paper{ID: "1234", Title: "Snapshot Paper"}
+	update := notes.SnapshotUpdate{
+		Messages: []notes.ConversationMessage{
+			{Kind: "question", Content: "What is the method?", Timestamp: time.Now()},
+			{Kind: "answer", Content: "We use contrastive learning.", Timestamp: time.Now()},
+		},
+	}
+
+	runner := appendConversationSnapshotJob(path, paper, update)
+	if _, err := runner(context.Background()); err != nil {
+		t.Fatalf("appendConversationSnapshotJob() error = %v", err)
+	}
+
+	snapshots, err := notes.LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(snapshots))
+	}
+	if len(snapshots[0].Messages) != 2 {
+		t.Fatalf("expected 2 messages persisted, got %#v", snapshots[0].Messages)
 	}
 }

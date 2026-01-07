@@ -1579,6 +1579,17 @@ func abstractSentences(text string) []string {
 	return sentences
 }
 
+func firstSentences(text string, limit int) string {
+	sentences := abstractSentences(text)
+	if len(sentences) == 0 {
+		return ""
+	}
+	if limit > 0 && len(sentences) > limit {
+		sentences = sentences[:limit]
+	}
+	return strings.Join(sentences, " ")
+}
+
 func waitBriefSectionStream(paperID string, kind llm.BriefSectionKind, updates <-chan llm.BriefSectionDelta) tea.Cmd {
 	if updates == nil {
 		return nil
@@ -1616,7 +1627,34 @@ func (m *model) contextForSection(kind llm.BriefSectionKind) string {
 	if contexts == nil {
 		return ""
 	}
-	return contexts[kind]
+	context := contexts[kind]
+	if kind == llm.BriefTechnical {
+		if meta := m.technicalMetadata(); meta != "" {
+			if context != "" {
+				context = fmt.Sprintf("%s\n\n%s", meta, context)
+			} else {
+				context = meta
+			}
+		}
+	}
+	return context
+}
+
+func (m *model) technicalMetadata() string {
+	if m.paper == nil {
+		return ""
+	}
+	var parts []string
+	if title := strings.TrimSpace(m.paper.Title); title != "" {
+		parts = append(parts, fmt.Sprintf("Title: %s", title))
+	}
+	if abstract := firstSentences(m.paper.Abstract, 2); abstract != "" {
+		parts = append(parts, fmt.Sprintf("Abstract: %s", abstract))
+	}
+	if len(m.paper.KeyContributions) > 0 {
+		parts = append(parts, fmt.Sprintf("Key contributions: %s", shortenList(m.paper.KeyContributions, 3)))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func (m *model) launchBriefSections() tea.Cmd {

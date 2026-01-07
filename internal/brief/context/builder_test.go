@@ -47,3 +47,19 @@ func TestBuilderRespectsBudgets(t *testing.T) {
 		}
 	}
 }
+
+func TestRankChunksForTechnicalPrioritizesRelevantParagraphs(t *testing.T) {
+	chunks := []Chunk{
+		{Text: "Boilerplate introduction."},
+		{Text: "We present a new dataset."},
+		{Text: "Method architecture uses dataset and optimization."},
+		{Text: "Results are good."},
+	}
+	ranked := rankChunksForTechnical(chunks)
+	if len(ranked) < 2 {
+		t.Fatalf("expected at least two ranked chunks, got %d", len(ranked))
+	}
+	if !strings.Contains(strings.ToLower(ranked[0].Text), "method") {
+		t.Fatalf("expected first chunk to mention method, got %s", ranked[0].Text)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -82,7 +83,11 @@ func (b *Builder) Build(content string) Package {
 
 	sections := map[llm.BriefSectionKind]string{}
 	for kind, budget := range b.budgets {
-		sections[kind] = clipChunks(chunks, budget)
+		sectionChunks := chunks
+		if kind == llm.BriefTechnical {
+			sectionChunks = rankChunksForTechnical(chunks)
+		}
+		sections[kind] = clipChunks(sectionChunks, budget)
 	}
 
 	return Package{
@@ -178,4 +183,59 @@ func clipChunks(chunks []Chunk, budget int) string {
 
 func runeLen(text string) int {
 	return len([]rune(text))
+}
+
+func rankChunksForTechnical(chunks []Chunk) []Chunk {
+	if len(chunks) == 0 {
+		return chunks
+	}
+	type scoredChunk struct {
+		chunk Chunk
+		score int
+		index int
+	}
+	scored := make([]scoredChunk, 0, len(chunks))
+	for idx, chunk := range chunks {
+		scored = append(scored, scoredChunk{
+			chunk: chunk,
+			score: scoreTechnicalChunk(chunk.Text),
+			index: idx,
+		})
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].index < scored[j].index
+		}
+		return scored[i].score > scored[j].score
+	})
+	ranked := make([]Chunk, 0, len(scored))
+	for _, entry := range scored {
+		ranked = append(ranked, entry.chunk)
+	}
+	return ranked
+}
+
+func scoreTechnicalChunk(text string) int {
+	lower := strings.ToLower(text)
+	keywords := []string{
+		"method",
+		"architecture",
+		"model",
+		"training",
+		"dataset",
+		"evaluation",
+		"experiment",
+		"loss",
+		"optimization",
+		"hyperparameter",
+		"baseline",
+		"ablation",
+	}
+	score := 0
+	for _, keyword := range keywords {
+		if strings.Contains(lower, keyword) {
+			score++
+		}
+	}
+	return score
 }

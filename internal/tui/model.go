@@ -315,11 +315,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleSuggestionResult(msg)
 	case tea.WindowSizeMsg:
 		m.layout.Update(msg.Width, msg.Height)
-		composerWidth := m.layout.windowWidth - viewportHorizontalPadding
-		if composerWidth > 72 {
-			composerWidth = 72
-		}
-		if composerWidth < minViewportWidth {
+		composerWidth := m.layout.viewportWidth
+		if composerWidth <= 0 {
 			composerWidth = minViewportWidth
 		}
 		m.composer.SetWidth(composerWidth)

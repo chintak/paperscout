@@ -99,7 +99,7 @@ func appendConversationSnapshotJob(path string, paper *arxiv.Paper, update notes
 		if path == "" || paperID == "" {
 			return nil, nil
 		}
-		if len(updateCopy.Messages) == 0 && len(updateCopy.Notes) == 0 {
+		if len(updateCopy.Messages) == 0 && len(updateCopy.Notes) == 0 && updateCopy.Brief == nil && len(updateCopy.SectionMetadata) == 0 {
 			return nil, nil
 		}
 		if err := notes.AppendConversationSnapshot(path, paperID, title, updateCopy); err != nil {

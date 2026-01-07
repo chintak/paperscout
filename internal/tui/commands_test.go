@@ -107,3 +107,38 @@ func TestEnsureConversationSnapshotJobRejectsInvalidJSON(t *testing.T) {
 		t.Fatal("expected error for invalid JSON")
 	}
 }
+
+func TestAppendConversationSnapshotJobPersistsBriefUpdates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+	paper := &arxiv.Paper{ID: "1234", Title: "Snapshot Paper"}
+	update := notes.SnapshotUpdate{
+		Brief: &notes.BriefSnapshot{
+			Summary:   []string{"summary"},
+			Technical: []string{"technical"},
+			DeepDive:  []string{"deep"},
+		},
+		SectionMetadata: []notes.BriefSectionMetadata{
+			{Kind: "summary", Status: "completed"},
+		},
+	}
+
+	runner := appendConversationSnapshotJob(path, paper, update)
+	if _, err := runner(context.Background()); err != nil {
+		t.Fatalf("appendConversationSnapshotJob() error = %v", err)
+	}
+
+	snapshots, err := notes.LoadConversationSnapshots(path)
+	if err != nil {
+		t.Fatalf("LoadConversationSnapshots() error = %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].Brief == nil || len(snapshots[0].Brief.Summary) != 1 {
+		t.Fatalf("expected brief summary to be persisted: %#v", snapshots[0].Brief)
+	}
+	if len(snapshots[0].SectionMetadata) != 1 {
+		t.Fatalf("expected section metadata persisted: %#v", snapshots[0].SectionMetadata)
+	}
+}

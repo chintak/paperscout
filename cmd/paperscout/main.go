@@ -16,10 +16,8 @@ func main() {
 	defaultPath := filepath.Join(".", "zettelkasten.json")
 	zettelPath := flag.String("zettel", defaultPath, "path to the knowledge base JSON file")
 	noAltScreen := flag.Bool("no-alt-screen", false, "disable the alternate screen buffer")
-	llmProvider := flag.String("llm-provider", "ollama", "LLM provider (auto, openai, ollama)")
-	llmModel := flag.String("llm-model", "", "override the default model for the chosen provider")
-	llmEndpoint := flag.String("llm-endpoint", "", "custom API base URL (OpenAI) or host (Ollama)")
-	openAIKey := flag.String("openai-api-key", "", "OpenAI API key (overrides OPENAI_API_KEY)")
+	llmModel := flag.String("llm-model", "", "override the default Ollama model (ministral-3:latest)")
+	llmEndpoint := flag.String("llm-endpoint", "", "custom Ollama host (eg. http://localhost:11434)")
 	flag.Parse()
 
 	absPath, err := filepath.Abs(*zettelPath)
@@ -30,10 +28,8 @@ func main() {
 
 	var llmClient llm.Client
 	llmClient, err = llm.NewFromEnv(llm.Config{
-		Provider: llm.Provider(*llmProvider),
 		Model:    *llmModel,
 		Endpoint: *llmEndpoint,
-		APIKey:   *openAIKey,
 	})
 	if err != nil {
 		fmt.Println("LLM disabled:", err)

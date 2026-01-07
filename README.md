@@ -20,11 +20,9 @@ go run ./cmd/paperscout -zettel ~/notes/zettelkasten.json
 - Press `r` to load another paper or `Ctrl+C` to quit.
 
 ## LLM Summaries & Questions
-PaperScout now downloads the linked "View PDF" asset, parses it locally, and can summarize it or answer follow-up questions through either OpenAI or Ollama. Ollama is the default, so once you have `ollama serve` running you can simply start PaperScout and hit `a`/`q` for summaries or questions.
+PaperScout now downloads the linked "View PDF" asset, parses it locally, and can summarize it or answer follow-up questions through Ollama. Once you have `ollama serve` running you can simply start PaperScout and hit `a`/`q` for summaries or questions.
 
-- **OpenAI (hosted)** – set `OPENAI_API_KEY` (or pass `-openai-api-key`) and optionally `OPENAI_MODEL`/`OPENAI_BASE_URL`, then run `go run ./cmd/paperscout -llm-provider openai`.
-- **Ollama (local)** – run `ollama serve` after pulling `ministral-3:latest`, which PaperScout now selects by default. Override with your own model via `-llm-provider ollama -llm-model <name>` (or `OLLAMA_MODEL`) plus `-llm-endpoint http://localhost:11434` if your daemon runs elsewhere. Ministral 3 exposes a 262K-token context window (per `ollama show`), which leaves plenty of headroom for long PDFs and follow-up questions without extra tuning.
-- **Auto switch** – pass `-llm-provider auto` if you want PaperScout to prefer OpenAI whenever a key is present and otherwise fall back to Ollama.
+- **Ollama (local)** – run `ollama serve` after pulling `ministral-3:latest`, which PaperScout now selects by default. Override the model with `-llm-model <name>` (or `OLLAMA_MODEL`) and point to a custom host via `-llm-endpoint http://localhost:11434` if your daemon runs elsewhere. Ministral 3 exposes a 262K-token context window (per `ollama show`), which leaves plenty of headroom for long PDFs and follow-up questions without extra tuning.
 
 You can still launch without any LLM; summaries and Q&A sections will show setup instructions instead of results.
 
@@ -37,7 +35,7 @@ Runs table-driven unit tests for the `internal/arxiv` and `internal/notes` packa
 ## Controls & Features
 - **Three-pass brief** – Generates summary, technical, and deep-dive sections straight from the parsed PDF.
 - **Full PDF ingestion** – Downloads the "View PDF" link, converts it to text locally, and uses that text for summaries and question answering.
-- **LLM summaries & Q&A** – Hit `a` to re-run the summary and `q` to ask questions. PaperScout streams the relevant PDF context to OpenAI or Ollama and logs each answer in the transcript.
+- **LLM summaries & Q&A** – Hit `a` to re-run the summary and `q` to ask questions. PaperScout streams the relevant PDF context to Ollama and logs each answer in the transcript.
 - **Subject context** – Shows arXiv subject tags alongside the title to prime your reading session.
 - **Manual notes** – Write free-form notes without leaving the TUI; they'll be appended to the transcript and saved via the composer.
 - **Persistent knowledge base** – Saved notes reappear when revisiting the same paper so you can extend or refactor them without duplication.

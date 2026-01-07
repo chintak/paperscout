@@ -878,7 +878,7 @@ func (m *model) submitComposer() tea.Cmd {
 			return nil
 		}
 		if m.config.LLM == nil {
-			m.infoMessage = "Configure OpenAI or Ollama to unlock questions."
+			m.infoMessage = "Configure Ollama to unlock questions."
 			return nil
 		}
 		askedAt := time.Now()
@@ -1651,7 +1651,7 @@ func (m *model) actionSummarizeCmd() tea.Cmd {
 		return nil
 	}
 	if m.config.LLM == nil {
-		m.infoMessage = "Configure OpenAI or Ollama via flags to enable summaries."
+		m.infoMessage = "Configure Ollama via flags to enable summaries."
 		return nil
 	}
 	if strings.TrimSpace(m.paper.FullText) == "" {
@@ -1672,7 +1672,7 @@ func (m *model) actionAskQuestionCmd() tea.Cmd {
 		return nil
 	}
 	if m.config.LLM == nil {
-		m.infoMessage = "Configure OpenAI or Ollama to unlock questions."
+		m.infoMessage = "Configure Ollama to unlock questions."
 		return nil
 	}
 	m.composer.SetValue("")

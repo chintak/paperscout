@@ -5,7 +5,7 @@ PaperScout currently issues a single, blocking LLM call for the entire three-pas
 ## Baseline & Profiling Notes
 
 - `handlePaperResult` (`internal/tui/model.go`) immediately triggers `jobBus.Start(jobKindSummary, summarizePaperJob(...))`, resetting `m.brief` and setting `m.briefLoading = true`. No other jobs run until this completes.
-- `summarizePaperJob` (`internal/tui/commands.go`) performs exactly one `client.ReadingBrief(ctx, title, content)` call with a 2-minute timeout. `llm.ollamaClient` and `llm.openAIClient` both call helpers that (a) clip the entire PDF to `maxBriefChars` (200k characters) and (b) explicitly disable streaming (`stream:false` in `ollama_client.go`) or rely on chat completions that return only when the full message is ready.
+- `summarizePaperJob` (`internal/tui/commands.go`) performs exactly one `client.ReadingBrief(ctx, title, content)` call with a 2-minute timeout. `llm.ollamaClient` clips the entire PDF to `maxBriefChars` (200k characters) and explicitly disables streaming (`stream:false` in `ollama_client.go`), so the call only returns once the backend has produced the full message.
 - `handleBriefResult` replaces the entire `m.brief` struct and transcript entry in one step—there is no incremental section update message.
 - Because `jobKindSummary` is the only job in flight, every spinner frame and job log entry between spinner start and `briefResultMsg` is attributable to the monolithic `ReadingBrief` request. Fetching/parsing already finished earlier in the pipeline, so we know the blocking path consists of:
   1. Clipping + prompt construction in-process (< 1s in benchmarks because it is mostly string slicing).
@@ -59,7 +59,7 @@ PaperScout currently issues a single, blocking LLM call for the entire three-pas
 - Add a `GenerateBriefSections(ctx context.Context, reqs []BriefSectionRequest) (<-chan BriefSectionDelta, error)` helper in `internal/llm/brief.go` that:
   - Accepts multiple section requests, starts one goroutine per section (bounded by provider limits), and forwards deltas back on a merged channel.
   - Wraps existing `llm.Client` implementations so the remainder of the codebase only needs to depend on this helper; initial implementation can still call `ReadingBrief` behind the scenes when streaming isn't yet available.
-- For Ollama, set `"stream": true` and parse each JSON line from `/api/generate`. Emit a delta when `response` accumulates a newline or "DONE". For OpenAI, hit the Chat Completions streaming API (`stream: true`) and convert delta chunks into partial bullets.
+- For Ollama, set `"stream": true` and parse each JSON line from `/api/generate`. Emit a delta when `response` accumulates a newline or "DONE" and forward it via the merged `BriefSectionDelta` channel once the update is ready.
 
 ### 3. Parallel command execution in the TUI
 
@@ -107,7 +107,7 @@ PaperScout currently issues a single, blocking LLM call for the entire three-pas
 ## Risks & Trade-offs
 
 - **LLM concurrency limits** – Running three prompts simultaneously can trip provider rate limits. Mitigation: allow configurable concurrency (1–3) and degrade gracefully by queueing sections when a 429 is returned.
-- **Streaming parsers diverge** – Ollama and OpenAI expose different streaming payloads. We'll keep provider-specific parsers inside `internal/llm` and expose a provider-neutral delta channel to the rest of the app.
+- **Streaming parser coupling** – Ollama's `/api/generate` stream uses newline-delimited JSON. We keep the parser inside `internal/llm` and expose a stable `BriefSectionDelta` channel so the UI need not depend on transport details while keeping the parser well-tested.
 - **Token budget regression** – Splitting prompts may increase total tokens. The context manager must dedupe shared chunks and enforce per-section caps to stay within the existing 262k-token envelope.
 - **UI churn** – Frequent updates could cause viewport jumps. Buffer streaming text until we have a complete bullet (line ending or numbered prefix) before refreshing the viewport.
 

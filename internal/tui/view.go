@@ -228,7 +228,7 @@ func (m *model) helpView() string {
 		sectionHeaderStyle.Render("Command Palette"),
 		helperStyle.Render("• use g / G to jump to the top or bottom."),
 		helperStyle.Render("• press Ctrl+K to open the command palette, then type to filter actions and hit Enter to run them."),
-		helperStyle.Render("• use the palette to regenerate the LLM brief or ask questions once OpenAI or Ollama is configured."),
+		helperStyle.Render("• use the palette to regenerate the LLM brief or ask questions once Ollama is configured."),
 		helperStyle.Render("• press r to paste a new URL, Ctrl+C to quit."),
 	}
 	return helpBoxStyle.Render(strings.Join(lines, "\n"))

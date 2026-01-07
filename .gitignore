@@ -5,6 +5,8 @@
 
 # macOS metadata
 .DS_Store
+.gocache/
+example/
 
 # Common Go build output directories
 bin/

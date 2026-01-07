@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/wordwrap"
@@ -81,30 +80,86 @@ func (m *model) footerTickerView() string {
 	}
 	available := width - 2
 	if available <= 0 {
-		return statusBarStyle.Render(hints)
+		return statusBarStyle.Render(previewText(hints, width))
 	}
-	line := hints
-	if last := m.lastTranscriptSummary(); last != "" {
+	line := previewText(hints, available)
+	if event := m.lastTranscriptEvent(); event != "" {
 		separator := "  •  "
-		label := "Last: "
-		remaining := available - utf8.RuneCountInString(hints) - utf8.RuneCountInString(separator) - utf8.RuneCountInString(label)
-		if remaining > 0 {
-			line = hints + separator + label + previewText(last, remaining)
-		} else {
-			line = previewText(hints, available)
-		}
-	} else {
-		line = previewText(hints, available)
+		label := "Last: " + event
+		line = previewText(hints+separator+label, available)
 	}
 	return statusBarStyle.Render(line)
 }
 
-func (m *model) lastTranscriptSummary() string {
+func (m *model) lastTranscriptEvent() string {
 	if len(m.transcriptEntries) == 0 {
 		return ""
 	}
 	entry := m.transcriptEntries[len(m.transcriptEntries)-1]
-	return fmt.Sprintf("%s: %s", entry.Kind, entry.Content)
+	return describeTranscriptEntry(entry)
+}
+
+func describeTranscriptEntry(entry transcriptEntry) string {
+	switch entry.Kind {
+	case "fetch":
+		return "Fetching paper"
+	case "paper":
+		return "Paper loaded"
+	case "note":
+		return "Note added"
+	case "question":
+		return "Question sent"
+	case "answer_draft":
+		return "Draft answer ready"
+	case "answer":
+		return "Answer ready"
+	case "brief":
+		return briefEventLabel(entry.Content)
+	case "save":
+		return "Notes saved"
+	case "error":
+		return errorEventLabel(entry.Content)
+	default:
+		return strings.Title(entry.Kind)
+	}
+}
+
+func briefEventLabel(content string) string {
+	section := briefSectionFromContent(content)
+	if section == "" {
+		return "Brief ready"
+	}
+	return fmt.Sprintf("Brief %s ready", section)
+}
+
+func briefSectionFromContent(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "### ") {
+			continue
+		}
+		title := strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))
+		lower := strings.ToLower(title)
+		switch {
+		case strings.Contains(lower, "summary"):
+			return "summary"
+		case strings.Contains(lower, "technical"):
+			return "technical"
+		case strings.Contains(lower, "deep dive"):
+			return "deep dive"
+		default:
+			return lower
+		}
+	}
+	return ""
+}
+
+func errorEventLabel(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "Error occurred"
+	}
+	return fmt.Sprintf("Error: %s", previewText(trimmed, 32))
 }
 
 func (m *model) viewPalette() string {

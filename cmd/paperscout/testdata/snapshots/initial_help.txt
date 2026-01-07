@@ -22,7 +22,5 @@ Enter loads the paper; Ctrl+Enter saves a note; Esc clears the composer.
 
 
 Paste an arXiv url or identifier to begin.
-
 > Paste an arXiv URL or identifier (Alt+Enter to load)…
-
  Enter: load/ask • Ctrl+Enter: note • Alt+Enter: URL • Esc: clear

@@ -904,7 +904,7 @@ func (m *model) submitComposer() tea.Cmd {
 			m.infoMessage = "Question queued; waiting for the brief to finish."
 			return snapshotCmd
 		}
-		questionCmd := m.launchQuestion(idx, true, "")
+		questionCmd := m.launchQuestion(idx, "")
 		if snapshotCmd != nil && questionCmd != nil {
 			return tea.Batch(snapshotCmd, questionCmd)
 		}
@@ -944,7 +944,7 @@ func (m *model) enqueueQuestion(index int) {
 	m.queuedQuestions = append(m.queuedQuestions, index)
 }
 
-func (m *model) launchQuestion(index int, allowDraft bool, infoMessage string) tea.Cmd {
+func (m *model) launchQuestion(index int, infoMessage string) tea.Cmd {
 	if m.paper == nil || m.config.LLM == nil {
 		return nil
 	}
@@ -952,21 +952,10 @@ func (m *model) launchQuestion(index int, allowDraft bool, infoMessage string) t
 		return nil
 	}
 	entry := &m.qaHistory[index]
-	setInfo := true
-	if allowDraft && entry.Answer == "" && entry.TranscriptIndex < 0 {
-		if draft := draftAnswerForQuestion(m.paper); draft != "" {
-			entry.Answer = draft
-			entry.TranscriptIndex = m.appendTranscriptEntry("answer_draft", draft)
-			m.infoMessage = "Draft response ready; refining via LLM…"
-			setInfo = false
-		}
-	}
-	if setInfo {
-		if infoMessage != "" {
-			m.infoMessage = infoMessage
-		} else {
-			m.infoMessage = "Answering question via LLM…"
-		}
+	if infoMessage != "" {
+		m.infoMessage = infoMessage
+	} else {
+		m.infoMessage = "Answering question via LLM…"
 	}
 	m.questionLoading = true
 	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindQuestion, questionAnswerJob(index, m.config.LLM, m.paper, entry.Question)))
@@ -978,7 +967,7 @@ func (m *model) maybeStartQueuedQuestion() tea.Cmd {
 	}
 	index := m.queuedQuestions[0]
 	m.queuedQuestions = m.queuedQuestions[1:]
-	return m.launchQuestion(index, false, "Answering queued question via LLM…")
+	return m.launchQuestion(index, "Answering queued question via LLM…")
 }
 
 func (m *model) blurComposer() {
@@ -1476,26 +1465,6 @@ func (m *model) seedBriefMessages() {
 		}
 		m.setBriefMessage(kind, briefMessageContentWithNotice(kind, bullets, notice))
 	}
-}
-
-func draftAnswerForQuestion(paper *arxiv.Paper) string {
-	if paper == nil {
-		return ""
-	}
-	if summary := fallbackSummaryBullets(paper.Abstract); len(summary) > 0 {
-		if len(summary) > 2 {
-			summary = summary[:2]
-		}
-		return strings.Join(summary, " ")
-	}
-	if len(paper.KeyContributions) > 0 {
-		limit := 2
-		if len(paper.KeyContributions) < limit {
-			limit = len(paper.KeyContributions)
-		}
-		return strings.Join(paper.KeyContributions[:limit], " ")
-	}
-	return ""
 }
 
 func fallbackSummaryBullets(abstract string) []string {
@@ -2123,7 +2092,7 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 			entry.Answer = msg.answer
 			entry.Error = ""
 			m.errorMessage = ""
-			m.infoMessage = "Answer refined. Ask another with q."
+			m.infoMessage = "Answer ready. Ask another with q."
 			if entry.TranscriptIndex >= 0 && entry.TranscriptIndex < len(m.transcriptEntries) {
 				transcript := &m.transcriptEntries[entry.TranscriptIndex]
 				transcript.Kind = "answer"
@@ -2132,7 +2101,7 @@ func (m *model) handleQuestionResult(msg questionResultMsg) tea.Cmd {
 				m.markTranscriptDirty()
 				m.markViewportDirty()
 			} else {
-				m.appendTranscript("answer", msg.answer)
+				entry.TranscriptIndex = m.appendTranscriptEntry("answer", msg.answer)
 			}
 			snapshotCmd = m.appendConversationSnapshotCmd(notes.SnapshotUpdate{
 				Messages: []notes.ConversationMessage{

@@ -148,7 +148,7 @@ func TestComposerEnterSubmitsQuestion(t *testing.T) {
 	}
 }
 
-func TestQuestionDraftUpdatedWithRefinedAnswer(t *testing.T) {
+func TestQuestionResponseAppendedWithoutDraft(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{
 		ID:       "1234.56789",
@@ -162,37 +162,36 @@ func TestQuestionDraftUpdatedWithRefinedAnswer(t *testing.T) {
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {
 		t.Fatal("enter should submit question entries")
 	}
-	if len(m.transcriptEntries) != 2 {
-		t.Fatalf("expected 2 transcript entries, got %d", len(m.transcriptEntries))
-	}
-	draft := draftAnswerForQuestion(m.paper)
-	if draft == "" {
-		t.Fatal("expected non-empty draft response")
+	if len(m.transcriptEntries) != 1 {
+		t.Fatalf("expected only the question transcript entry, got %d", len(m.transcriptEntries))
 	}
 	entry := m.qaHistory[0]
-	if entry.TranscriptIndex < 0 || entry.TranscriptIndex >= len(m.transcriptEntries) {
-		t.Fatalf("draft index out of range: %d", entry.TranscriptIndex)
-	}
-	draftEntry := m.transcriptEntries[entry.TranscriptIndex]
-	if draftEntry.Kind != "answer_draft" || draftEntry.Content != draft {
-		t.Fatalf("draft entry mismatch: %+v", draftEntry)
+	if entry.TranscriptIndex != -1 {
+		t.Fatalf("expected transcript index to remain -1 before answer, got %d", entry.TranscriptIndex)
 	}
 
 	m.handleQuestionResult(questionResultMsg{
 		paperID: m.paper.ID,
 		index:   0,
-		answer:  "Refined answer",
+		answer:  "Final answer",
 	})
 	if len(m.transcriptEntries) != 2 {
-		t.Fatalf("expected draft to be updated in place, got %d entries", len(m.transcriptEntries))
+		t.Fatalf("expected answer appended, got %d entries", len(m.transcriptEntries))
 	}
-	refined := m.transcriptEntries[entry.TranscriptIndex]
-	if refined.Kind != "answer" || refined.Content != "Refined answer" {
-		t.Fatalf("refined entry mismatch: %+v", refined)
+	answerEntry := m.transcriptEntries[1]
+	if answerEntry.Kind != "answer" || answerEntry.Content != "Final answer" {
+		t.Fatalf("unexpected answer entry: %+v", answerEntry)
+	}
+	entry = m.qaHistory[0]
+	if entry.TranscriptIndex != 1 {
+		t.Fatalf("transcript index not updated, got %d", entry.TranscriptIndex)
+	}
+	if entry.Answer != "Final answer" {
+		t.Fatalf("qa history not updated, got %q", entry.Answer)
 	}
 }
 
-func TestQuestionDraftPreservedOnError(t *testing.T) {
+func TestQuestionErrorAppendsErrorEntry(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{
 		ID:       "1234.56789",
@@ -206,20 +205,21 @@ func TestQuestionDraftPreservedOnError(t *testing.T) {
 	if _, handled := m.processComposerKey(tea.KeyMsg{Type: tea.KeyEnter}); !handled {
 		t.Fatal("enter should submit question entries")
 	}
-	draft := draftAnswerForQuestion(m.paper)
-	entry := m.qaHistory[0]
+	if len(m.transcriptEntries) != 1 {
+		t.Fatalf("expected only the question transcript entry, got %d", len(m.transcriptEntries))
+	}
 
 	m.handleQuestionResult(questionResultMsg{
 		paperID: m.paper.ID,
 		index:   0,
 		err:     errors.New("llm down"),
 	})
-	if len(m.transcriptEntries) != 3 {
-		t.Fatalf("expected error transcript append, got %d entries", len(m.transcriptEntries))
+	if len(m.transcriptEntries) != 2 {
+		t.Fatalf("expected error transcript appended, got %d entries", len(m.transcriptEntries))
 	}
-	unchanged := m.transcriptEntries[entry.TranscriptIndex]
-	if unchanged.Kind != "answer_draft" || unchanged.Content != draft {
-		t.Fatalf("draft entry should remain on error: %+v", unchanged)
+	errorEntry := m.transcriptEntries[1]
+	if errorEntry.Kind != "error" {
+		t.Fatalf("expected error entry, got %+v", errorEntry)
 	}
 	if m.errorMessage == "" {
 		t.Fatal("expected error message on failure")

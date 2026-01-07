@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -89,9 +90,15 @@ func (b *jobBus) Start(kind jobKind, runner jobRunner) tea.Cmd {
 			snapshot.Status = jobStatusSucceeded
 		}
 		snapshot.Duration = snapshot.CompletedAt.Sub(started)
-		log.Printf("[jobs] %s %s (duration=%s, err=%v)", kind, snapshot.Status, snapshot.Duration, err)
+		if shouldLogJobs() {
+			log.Printf("[jobs] %s %s (duration=%s, err=%v)", kind, snapshot.Status, snapshot.Duration, err)
+		}
 		return jobResultEnvelope{Snapshot: snapshot, Payload: payload}
 	}
 
 	return tea.Sequence(startCmd, runCmd)
+}
+
+func shouldLogJobs() bool {
+	return os.Getenv("PAPERSCOUT_DEBUG") != ""
 }

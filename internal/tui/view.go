@@ -9,18 +9,20 @@ import (
 )
 
 func (m *model) View() string {
+	var view string
 	switch m.stage {
 	case stageInput:
-		return m.viewInput()
+		view = m.viewInput()
 	case stageLoading, stageDisplay:
-		return m.viewDisplay()
+		view = m.viewDisplay()
 	case stageSaving:
-		return m.viewDisplay()
+		view = m.viewDisplay()
 	case stagePalette:
-		return m.viewPalette()
+		view = m.viewPalette()
 	default:
-		return ""
+		view = ""
 	}
+	return strings.TrimRight(view, "\n")
 }
 
 func (m *model) viewInput() string {

@@ -2047,7 +2047,7 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 		if m.briefLoading {
 			m.infoMessage = fmt.Sprintf("%s section ready. Waiting on remaining sections…", title)
 		} else {
-			m.infoMessage = "Reading brief ready."
+			m.clearBriefInfoMessage()
 		}
 		m.setBriefMessage(msg.kind, briefMessageContent(msg.kind, msg.bullets))
 		update := notes.SnapshotUpdate{
@@ -2077,6 +2077,12 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 		return snapshotCmd
 	}
 	return queuedCmd
+}
+
+func (m *model) clearBriefInfoMessage() {
+	if strings.Contains(strings.ToLower(m.infoMessage), "brief") {
+		m.infoMessage = ""
+	}
 }
 
 func (m *model) handleBriefSectionStream(msg briefSectionStreamMsg) tea.Cmd {

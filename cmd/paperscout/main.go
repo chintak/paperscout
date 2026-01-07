@@ -39,7 +39,6 @@ func main() {
 	if !*noAltScreen {
 		opts = append(opts, tea.WithAltScreen())
 	}
-	opts = append(opts, tea.WithMouseCellMotion())
 	program := tea.NewProgram(
 		tui.New(tui.Config{
 			KnowledgeBasePath: absPath,

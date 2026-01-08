@@ -34,6 +34,7 @@ type pageLayout struct {
 	viewportHeight   int
 	transcriptHeight int
 	composerHeight   int
+	heroHeight       int
 }
 
 func newPageLayout() pageLayout {
@@ -42,6 +43,7 @@ func newPageLayout() pageLayout {
 		viewportHeight:   20,
 		transcriptHeight: 10,
 		composerHeight:   1,
+		heroHeight:       0,
 	}
 }
 
@@ -62,6 +64,17 @@ func (l *pageLayout) SetComposerHeight(height int) {
 	l.reflow()
 }
 
+func (l *pageLayout) SetHeroHeight(height int) {
+	if height < 0 {
+		height = 0
+	}
+	if l.heroHeight == height {
+		return
+	}
+	l.heroHeight = height
+	l.reflow()
+}
+
 func (l *pageLayout) reflow() {
 	innerWidth := l.windowWidth - viewportHorizontalPadding
 	if innerWidth < minViewportWidth {
@@ -70,7 +83,7 @@ func (l *pageLayout) reflow() {
 	l.viewportWidth = innerWidth
 	const chrome = 8
 	const footerStatusHeight = 1
-	usable := l.windowHeight - chrome - l.composerHeight
+	usable := l.windowHeight - chrome - l.heroHeight
 	if usable < 12 {
 		usable = 12
 	}
@@ -86,7 +99,7 @@ func (l *pageLayout) reflow() {
 }
 
 type displayView struct {
-	content         string
+	body            string
 	suggestionLines map[int]int
 	anchors         map[string]int
 }
@@ -136,6 +149,15 @@ func (m *model) writeConversationStream(cb *contentBuilder) {
 	}
 }
 
+func (m *model) writeComposerBlock(cb *contentBuilder) {
+	cb.WriteRune('\n')
+	cb.WriteString(helperStyle.Render("Command"))
+	cb.WriteRune('\n')
+	cb.WriteString(indentMultiline(m.composer.View(), "  "))
+	cb.WriteRune('\n')
+	cb.WriteString(m.footerTickerView())
+}
+
 func (cb *contentBuilder) WriteString(s string) {
 	cb.builder.WriteString(s)
 	cb.lines += strings.Count(s, "\n")
@@ -156,23 +178,13 @@ func (cb *contentBuilder) Line() int {
 	return cb.lines
 }
 
-func (m *model) writeHero(cb *contentBuilder) {
-	hero := strings.TrimSpace(m.heroView())
-	if hero == "" {
-		return
-	}
-	cb.WriteString(hero)
-	cb.WriteRune('\n')
-	cb.WriteRune('\n')
-}
-
 func (m *model) buildDisplayContent() displayView {
 	cb := &contentBuilder{}
-	m.writeHero(cb)
 	m.writeConversationStream(cb)
+	m.writeComposerBlock(cb)
 
 	return displayView{
-		content:         cb.String(),
+		body:            cb.String(),
 		suggestionLines: map[int]int{},
 		anchors:         map[string]int{},
 	}
@@ -180,7 +192,6 @@ func (m *model) buildDisplayContent() displayView {
 
 func (m *model) buildIdleContent() displayView {
 	cb := &contentBuilder{}
-	m.writeHero(cb)
 	cb.WriteString(sectionHeaderStyle.Render("Paste an arXiv URL in the Composer"))
 	cb.WriteRune('\n')
 	cb.WriteString(helperStyle.Render("Type an arXiv URL or identifier below and press Alt+Enter to fetch metadata."))
@@ -192,8 +203,10 @@ func (m *model) buildIdleContent() displayView {
 		m.writeConversationStream(cb)
 	}
 
+	m.writeComposerBlock(cb)
+
 	return displayView{
-		content:         cb.String(),
+		body:            cb.String(),
 		suggestionLines: map[int]int{},
 		anchors:         map[string]int{},
 	}
@@ -677,6 +690,11 @@ func transcriptLabel(kind string) string {
 		return "Scout"
 	case "answer_draft":
 		return "Scout (draft)"
+	case briefTranscriptKindSummary, briefTranscriptKindTechnical, briefTranscriptKindDeepDive:
+		if label, ok := briefSectionLabelForTranscriptKind(kind); ok {
+			return fmt.Sprintf("Scout (%s)", label)
+		}
+		return "Scout (brief)"
 	case "brief":
 		return "Scout (brief)"
 	case "paper", "fetch", "save":

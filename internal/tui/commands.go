@@ -16,9 +16,11 @@ import (
 	"github.com/csheth/browse/internal/notes"
 )
 
+const fetchTimeout = 3 * time.Minute
+
 func fetchPaperJob(url string) jobRunner {
 	return func(parent context.Context) (tea.Msg, error) {
-		ctx, cancel := context.WithTimeout(parent, 35*time.Second)
+		ctx, cancel := context.WithTimeout(parent, fetchTimeout)
 		defer cancel()
 		paper, err := arxiv.FetchPaper(ctx, url)
 		if err != nil {

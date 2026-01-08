@@ -9,7 +9,6 @@ const (
 	stageLoading
 	stageDisplay
 	stageSaving
-	stagePalette
 )
 
 const (
@@ -56,3 +55,5 @@ const (
 	composerNotePlaceholder     = "Enter: ask • Ctrl+Enter: note • Alt+Enter: URL"
 	composerQuestionPlaceholder = "Ask about the loaded PDF (Enter to send)…"
 )
+
+const fetchInProgressMessage = "Fetch already in progress; wait for it to finish."

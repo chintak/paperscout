@@ -40,7 +40,7 @@ func TestPaperScoutInitialHelpSnapshot(t *testing.T) {
 		t.Fatalf("run CLI: %v", err)
 	}
 
-	frame, ok := lastFrameMatching(rec, []string{"PaperScout", "Conversation Stream", "Paste an arXiv"})
+	frame, ok := lastFrameMatching(rec, 32, []string{"PaperScout", "Conversation Stream", "Paste an arXiv"})
 	if !ok {
 		if _, has := rec.FinalFrame(); !has {
 			t.Fatalf("no frames captured")
@@ -99,7 +99,7 @@ func assertSnapshot(t *testing.T, path, got string) {
 	}
 }
 
-func lastFrameMatching(rec *tuitest.Recording, tokens []string) (tuitest.Frame, bool) {
+func lastFrameMatching(rec *tuitest.Recording, height int, tokens []string) (tuitest.Frame, bool) {
 	if rec == nil {
 		return tuitest.Frame{}, false
 	}
@@ -107,9 +107,23 @@ func lastFrameMatching(rec *tuitest.Recording, tokens []string) (tuitest.Frame, 
 		plain := rec.Frames[i].Plain
 		for _, token := range tokens {
 			if strings.Contains(plain, token) {
-				return rec.Frames[i], true
+				return cropFrame(rec.Frames[i], height), true
 			}
 		}
 	}
 	return tuitest.Frame{}, false
+}
+
+func cropFrame(frame tuitest.Frame, height int) tuitest.Frame {
+	frame.Plain = cropPlain(frame.Plain, height)
+	return frame
+}
+
+func cropPlain(plain string, height int) string {
+	trimmed := strings.TrimRight(plain, "\n")
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) <= height {
+		return trimmed
+	}
+	return strings.Join(lines[len(lines)-height:], "\n")
 }

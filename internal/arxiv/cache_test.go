@@ -16,20 +16,18 @@ func TestPDFCacheReusesFreshFile(t *testing.T) {
 	t.Setenv(cacheEnvVar, cacheDir)
 
 	var hits int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, baseURL := newMockClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
 		w.Header().Set("Etag", `"v1"`)
 		_, _ = w.Write([]byte("%PDF-1.4\nHello"))
 	}))
-	t.Cleanup(server.Close)
-
-	cache, err := newPDFCache(server.Client())
+	cache, err := newPDFCache(client)
 	if err != nil {
 		t.Fatalf("newPDFCache: %v", err)
 	}
 	ctx := context.Background()
 
-	path, err := cache.Fetch(ctx, server.URL+"/pdf/2101.00001.pdf")
+	path, err := cache.Fetch(ctx, baseURL+"/pdf/2101.00001.pdf")
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
@@ -40,7 +38,7 @@ func TestPDFCacheReusesFreshFile(t *testing.T) {
 		t.Fatalf("expected single download, got %d hits", hits)
 	}
 
-	path2, err := cache.Fetch(ctx, server.URL+"/pdf/2101.00001.pdf")
+	path2, err := cache.Fetch(ctx, baseURL+"/pdf/2101.00001.pdf")
 	if err != nil {
 		t.Fatalf("second fetch: %v", err)
 	}
@@ -57,7 +55,7 @@ func TestPDFCacheRespectsConditionalRefresh(t *testing.T) {
 	t.Setenv(cacheEnvVar, cacheDir)
 
 	var etag string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, baseURL := newMockClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("If-None-Match") == `"v2"` {
 			w.WriteHeader(http.StatusNotModified)
 			return
@@ -66,15 +64,13 @@ func TestPDFCacheRespectsConditionalRefresh(t *testing.T) {
 		w.Header().Set("Etag", etag)
 		_, _ = w.Write([]byte("%PDF-1.4\nUpdated"))
 	}))
-	t.Cleanup(server.Close)
-
-	cache, err := newPDFCache(server.Client())
+	cache, err := newPDFCache(client)
 	if err != nil {
 		t.Fatalf("newPDFCache: %v", err)
 	}
 	ctx := context.Background()
 
-	path, err := cache.Fetch(ctx, server.URL+"/pdf/2201.00001.pdf")
+	path, err := cache.Fetch(ctx, baseURL+"/pdf/2201.00001.pdf")
 	if err != nil {
 		t.Fatalf("initial fetch: %v", err)
 	}
@@ -88,7 +84,7 @@ func TestPDFCacheRespectsConditionalRefresh(t *testing.T) {
 		t.Fatalf("chtimes: %v", err)
 	}
 
-	if _, err := cache.Fetch(ctx, server.URL+"/pdf/2201.00001.pdf"); err != nil {
+	if _, err := cache.Fetch(ctx, baseURL+"/pdf/2201.00001.pdf"); err != nil {
 		t.Fatalf("conditional fetch: %v", err)
 	}
 	if etag == "" {
@@ -101,20 +97,18 @@ func TestPDFCacheResumesPartialDownload(t *testing.T) {
 	t.Setenv(cacheEnvVar, cacheDir)
 
 	var rangeHeader string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, baseURL := newMockClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader = r.Header.Get("Range")
 		w.Header().Set("Etag", `"resume"`)
 		w.WriteHeader(http.StatusPartialContent)
 		_, _ = w.Write([]byte("world"))
 	}))
-	t.Cleanup(server.Close)
-
-	cache, err := newPDFCache(server.Client())
+	cache, err := newPDFCache(client)
 	if err != nil {
 		t.Fatalf("newPDFCache: %v", err)
 	}
 	ctx := context.Background()
-	key := cacheKey(server.URL + "/pdf/2301.00001.pdf")
+	key := cacheKey(baseURL + "/pdf/2301.00001.pdf")
 	pdfPath, metaPath, partPath := cache.pathsFor(key)
 
 	if err := os.WriteFile(partPath, []byte("hello "), 0o644); err != nil {
@@ -124,7 +118,7 @@ func TestPDFCacheResumesPartialDownload(t *testing.T) {
 		t.Fatalf("write meta: %v", err)
 	}
 
-	path, err := cache.Fetch(ctx, server.URL+"/pdf/2301.00001.pdf")
+	path, err := cache.Fetch(ctx, baseURL+"/pdf/2301.00001.pdf")
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
@@ -155,4 +149,20 @@ func TestCacheKeyFallsBackToHash(t *testing.T) {
 	if strings.Contains(key, "/") {
 		t.Fatalf("cache key should be sanitized, got %q", key)
 	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func newMockClient(handler http.HandlerFunc) (*http.Client, string) {
+	return &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			handler(rec, req)
+			resp := rec.Result()
+			resp.Request = req
+			return resp, nil
+		}),
+	}, "http://example.com"
 }

@@ -15,7 +15,7 @@ import (
 func main() {
 	defaultPath := filepath.Join(".", "zettelkasten.json")
 	zettelPath := flag.String("zettel", defaultPath, "path to the knowledge base JSON file")
-	noAltScreen := flag.Bool("no-alt-screen", false, "disable the alternate screen buffer")
+	noAltScreen := flag.Bool("no-alt-screen", true, "disable the alternate screen buffer (set to false to keep it)")
 	llmModel := flag.String("llm-model", "", "override the default Ollama model (ministral-3:latest)")
 	llmEndpoint := flag.String("llm-endpoint", "", "custom Ollama host (eg. http://localhost:11434)")
 	flag.Parse()

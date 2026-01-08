@@ -15,7 +15,6 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -36,11 +35,6 @@ type Config struct {
 
 // New returns a tea.Model ready to be mounted into a Program.
 func New(config Config) tea.Model {
-	paletteInput := textinput.New()
-	paletteInput.Placeholder = "Filter commands…"
-	paletteInput.CharLimit = 80
-	paletteInput.Width = 50
-
 	composer := textarea.New()
 	composer.Placeholder = composerNotePlaceholder
 	composer.CharLimit = 2000
@@ -96,7 +90,6 @@ func New(config Config) tea.Model {
 		pendingFocusAnchor:      "",
 		jobBus:                  newJobBus(),
 		layout:                  newPageLayout(),
-		paletteInput:            paletteInput,
 		transcriptViewportDirty: true,
 	}
 
@@ -108,6 +101,8 @@ func New(config Config) tea.Model {
 type model struct {
 	config Config
 	stage  stage
+
+	fetchInProgress bool
 
 	spinner            spinner.Model
 	viewport           viewport.Model
@@ -129,7 +124,6 @@ type model struct {
 	viewportDirty           bool
 	infoMessage             string
 	errorMessage            string
-	helpVisible             bool
 	sectionAnchors          map[string]int
 	brief                   llm.ReadingBrief
 	briefSections           map[llm.BriefSectionKind]briefSectionState
@@ -149,10 +143,6 @@ type model struct {
 	pendingFocusAnchor      string
 	jobBus                  *jobBus
 	layout                  pageLayout
-	paletteInput            textinput.Model
-	paletteMatches          []uiCommand
-	paletteCursor           int
-	paletteReturnStage      stage
 	transcriptEntries       []transcriptEntry
 	transcriptViewportDirty bool
 	composerMode            composerMode
@@ -198,15 +188,6 @@ type suggestionResultMsg struct {
 	err         error
 }
 
-type actionID string
-
-type uiCommand struct {
-	id          actionID
-	title       string
-	description string
-	shortcut    string
-}
-
 type transcriptEntry struct {
 	Kind      string
 	Content   string
@@ -220,22 +201,10 @@ type briefSectionState struct {
 }
 
 const (
-	actionSummarize   actionID = "summarize"
-	actionAskQuestion actionID = "ask_question"
-	actionManualNote  actionID = "manual_note"
-	actionSaveNotes   actionID = "save_notes"
-	actionToggleHelp  actionID = "toggle_help"
-	actionLoadNew     actionID = "load_new"
+	briefTranscriptKindSummary   = "brief_summary"
+	briefTranscriptKindTechnical = "brief_technical"
+	briefTranscriptKindDeepDive  = "brief_deep_dive"
 )
-
-var paletteCommands = []uiCommand{
-	{id: actionSummarize, title: "Summarize paper", description: "Regenerate the LLM reading brief for the loaded PDF"},
-	{id: actionAskQuestion, title: "Ask a question", description: "Open the Q&A prompt"},
-	{id: actionManualNote, title: "Add manual note", description: "Draft a manual note", shortcut: "m"},
-	{id: actionSaveNotes, title: "Save manual notes", description: "Persist any manual notes you drafted this session", shortcut: "s"},
-	{id: actionToggleHelp, title: "Toggle help overlay", description: "Show or hide the command cheatsheet", shortcut: "?"},
-	{id: actionLoadNew, title: "Load another paper", description: "Return to the URL prompt", shortcut: "r"},
-}
 
 var briefSectionKinds = []llm.BriefSectionKind{
 	llm.BriefSummary,
@@ -244,7 +213,7 @@ var briefSectionKinds = []llm.BriefSectionKind{
 }
 
 func (m *model) Init() tea.Cmd {
-	return textinput.Blink
+	return textarea.Blink
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -264,27 +233,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlK {
-			if m.stage == stagePalette {
-				m.closeCommandPalette()
-			} else {
-				m.openCommandPalette()
-			}
-			return m, nil
-		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
-		case tea.KeyEsc:
-			switch m.stage {
-			case stagePalette:
-				m.closeCommandPalette()
-				return m, nil
-			case stageDisplay:
-				return m, tea.Quit
-			default:
-				return m, tea.Quit
-			}
 		}
 		return m.handleKey(msg)
 	case tea.MouseMsg:
@@ -404,8 +355,6 @@ func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDisplayKey(key)
 	case stageSaving:
 		return m, nil
-	case stagePalette:
-		return m.handlePaletteKey(key)
 	default:
 		return m, nil
 	}
@@ -431,8 +380,6 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.actionLoadNewCmd()
 	case "s":
 		return m, m.actionSaveCmd()
-	case "?":
-		return m, m.actionToggleHelpCmd()
 	default:
 		handled = false
 	}
@@ -442,34 +389,6 @@ func (m *model) handleDisplayKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(key)
 	return m, cmd
-}
-
-func (m *model) handlePaletteKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch key.Type {
-	case tea.KeyEnter:
-		if len(m.paletteMatches) == 0 {
-			return m, nil
-		}
-		cmd := m.runCommand(m.paletteMatches[m.paletteCursor].id)
-		m.closeCommandPalette()
-		return m, cmd
-	case tea.KeyUp, tea.KeyCtrlP:
-		if len(m.paletteMatches) > 0 && m.paletteCursor > 0 {
-			m.paletteCursor--
-			m.markViewportDirty()
-		}
-		return m, nil
-	case tea.KeyDown, tea.KeyCtrlN:
-		if len(m.paletteMatches) > 0 && m.paletteCursor < len(m.paletteMatches)-1 {
-			m.paletteCursor++
-			m.markViewportDirty()
-		}
-		return m, nil
-	}
-	var inputCmd tea.Cmd
-	m.paletteInput, inputCmd = m.paletteInput.Update(key)
-	m.refreshPaletteMatches()
-	return m, inputCmd
 }
 
 func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
@@ -500,6 +419,7 @@ func (m *model) processComposerKey(key tea.KeyMsg) (tea.Cmd, bool) {
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(key)
 	m.updateComposerHeight()
+	m.markViewportDirty()
 	return cmd, true
 }
 
@@ -617,6 +537,7 @@ func (m *model) hydrateConversationHistory() {
 	})
 	m.transcriptEntries = entries
 	m.mapBriefMessages()
+	m.markBriefSectionsFromSnapshot()
 	m.markTranscriptDirty()
 	m.markViewportDirty()
 }
@@ -704,6 +625,10 @@ func (m *model) desiredComposerHeight() int {
 func (m *model) refreshViewport() {
 	m.viewportDirty = false
 	prevYOffset := m.viewport.YOffset
+	heroHeight := lineCount(strings.TrimSpace(m.heroView()))
+	m.layout.SetHeroHeight(heroHeight)
+	m.syncLayout()
+
 	var view displayView
 	if m.paper == nil {
 		m.viewport.Height = m.layout.viewportHeight
@@ -712,10 +637,10 @@ func (m *model) refreshViewport() {
 		m.viewport.Height = m.layout.viewportHeight
 		view = m.buildDisplayContent()
 	}
-	m.viewportContent = view.content
+	m.viewportContent = view.body
 	m.suggestionLines = view.suggestionLines
 	m.sectionAnchors = view.anchors
-	m.viewportLines = splitLinesPreserve(view.content)
+	m.viewportLines = splitLinesPreserve(view.body)
 	m.lineCount = len(m.viewportLines)
 	if m.lineCount == 0 {
 		m.viewportLines = []string{""}
@@ -746,12 +671,19 @@ func (m *model) refreshViewport() {
 		}
 	}
 
-	m.viewport.SetContent(view.content)
+	m.viewport.SetContent(view.body)
 	targetYOffset := prevYOffset
 	if forcedYOffset >= 0 {
 		targetYOffset = forcedYOffset
 	}
 	m.viewport.SetYOffset(m.clampYOffset(targetYOffset))
+}
+
+func lineCount(value string) int {
+	if value == "" {
+		return 0
+	}
+	return strings.Count(value, "\n") + 1
 }
 
 func (m *model) refreshTranscript() {
@@ -827,6 +759,11 @@ func (m *model) submitComposer() tea.Cmd {
 	}
 	switch m.composerMode {
 	case composerModeURL:
+		if m.fetchInProgress {
+			m.infoMessage = fetchInProgressMessage
+			return nil
+		}
+		m.fetchInProgress = true
 		m.stage = stageLoading
 		m.errorMessage = ""
 		m.infoMessage = "Fetching metadata…"
@@ -1258,7 +1195,7 @@ func briefMessageContent(kind llm.BriefSectionKind, bullets []string) string {
 
 func briefMessageContentWithNotice(kind llm.BriefSectionKind, bullets []string, notice string) string {
 	title := briefSectionTitle(kind)
-	lines := []string{fmt.Sprintf("### %s", title)}
+	lines := []string{}
 	if trimmed := strings.TrimSpace(notice); trimmed != "" {
 		lines = append(lines, fmt.Sprintf("> %s", trimmed))
 	}
@@ -1277,9 +1214,30 @@ func briefMessageContentWithNotice(kind llm.BriefSectionKind, bullets []string, 
 		if trimmed == "" {
 			continue
 		}
+		if heading := stripMarkdownHeading(trimmed); heading != "" {
+			if strings.EqualFold(heading, title) {
+				continue
+			}
+			trimmed = heading
+		}
+		if strings.EqualFold(trimmed, title) {
+			continue
+		}
 		lines = append(lines, trimmed)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func stripMarkdownHeading(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "#") {
+		return ""
+	}
+	stripped := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+	if stripped == "" {
+		return ""
+	}
+	return stripped
 }
 
 func dedupeLines(lines []string) []string {
@@ -1357,6 +1315,68 @@ func briefSectionAnchor(kind llm.BriefSectionKind) string {
 	}
 }
 
+func transcriptKindForBriefSection(kind llm.BriefSectionKind) string {
+	switch kind {
+	case llm.BriefSummary:
+		return briefTranscriptKindSummary
+	case llm.BriefTechnical:
+		return briefTranscriptKindTechnical
+	case llm.BriefDeepDive:
+		return briefTranscriptKindDeepDive
+	default:
+		return briefTranscriptKindSummary
+	}
+}
+
+func briefSectionKindFromTranscriptKind(kind string) (llm.BriefSectionKind, bool) {
+	switch kind {
+	case briefTranscriptKindSummary:
+		return llm.BriefSummary, true
+	case briefTranscriptKindTechnical:
+		return llm.BriefTechnical, true
+	case briefTranscriptKindDeepDive:
+		return llm.BriefDeepDive, true
+	default:
+		return "", false
+	}
+}
+
+func isBriefTranscriptKind(kind string) bool {
+	switch kind {
+	case "brief", briefTranscriptKindSummary, briefTranscriptKindTechnical, briefTranscriptKindDeepDive:
+		return true
+	default:
+		return false
+	}
+}
+
+func briefSectionKindFromEntry(entry transcriptEntry) (llm.BriefSectionKind, bool) {
+	if kind, ok := briefSectionKindFromTranscriptKind(entry.Kind); ok {
+		return kind, true
+	}
+	if entry.Kind == "brief" {
+		return briefMessageKind(entry.Content)
+	}
+	return "", false
+}
+
+func briefSectionLabelForTranscriptKind(kind string) (string, bool) {
+	if section, ok := briefSectionKindFromTranscriptKind(kind); ok {
+		return briefSectionTitle(section), true
+	}
+	return "", false
+}
+
+func briefSectionLabelFromEntry(entry transcriptEntry) (string, bool) {
+	if label, ok := briefSectionLabelForTranscriptKind(entry.Kind); ok {
+		return label, true
+	}
+	if kind, ok := briefMessageKind(entry.Content); ok {
+		return briefSectionTitle(kind), true
+	}
+	return "", false
+}
+
 func (m *model) briefBullets(kind llm.BriefSectionKind) []string {
 	switch kind {
 	case llm.BriefSummary:
@@ -1409,13 +1429,44 @@ func (m *model) mapBriefMessages() {
 		m.briefMessageIndex = map[llm.BriefSectionKind]int{}
 	}
 	for idx, entry := range m.transcriptEntries {
-		if entry.Kind != "brief" {
-			continue
-		}
-		if kind, ok := briefMessageKind(entry.Content); ok {
+		if kind, ok := briefSectionKindFromEntry(entry); ok {
 			m.briefMessageIndex[kind] = idx
 		}
 	}
+}
+
+func (m *model) markBriefSectionsFromSnapshot() {
+	if len(m.transcriptEntries) == 0 || m.briefMessageIndex == nil {
+		return
+	}
+	m.ensureBriefSections()
+	for _, kind := range briefSectionKinds {
+		if _, ok := m.briefMessageIndex[kind]; !ok {
+			continue
+		}
+		state := m.briefSections[kind]
+		state.Loading = false
+		state.Error = ""
+		state.Completed = true
+		m.briefSections[kind] = state
+	}
+	m.briefLoading = m.anyBriefSectionLoading()
+}
+
+func (m *model) hasSnapshotBriefs() bool {
+	if m.briefMessageIndex == nil || len(m.transcriptEntries) == 0 {
+		return false
+	}
+	for _, kind := range briefSectionKinds {
+		idx, ok := m.briefMessageIndex[kind]
+		if !ok || idx < 0 || idx >= len(m.transcriptEntries) {
+			return false
+		}
+		if strings.TrimSpace(m.transcriptEntries[idx].Content) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *model) setBriefMessage(kind llm.BriefSectionKind, content string) {
@@ -1425,16 +1476,17 @@ func (m *model) setBriefMessage(kind llm.BriefSectionKind, content string) {
 	if m.briefMessageIndex == nil {
 		m.briefMessageIndex = map[llm.BriefSectionKind]int{}
 	}
+	entryKind := transcriptKindForBriefSection(kind)
 	if idx, ok := m.briefMessageIndex[kind]; ok && idx >= 0 && idx < len(m.transcriptEntries) {
 		entry := &m.transcriptEntries[idx]
-		entry.Kind = "brief"
+		entry.Kind = entryKind
 		entry.Content = content
 		entry.Timestamp = time.Now()
 		m.markTranscriptDirty()
 		m.markViewportDirty()
 		return
 	}
-	idx := m.appendTranscriptEntry("brief", content)
+	idx := m.appendTranscriptEntry(entryKind, content)
 	m.briefMessageIndex[kind] = idx
 }
 
@@ -1734,17 +1786,6 @@ func (m *model) actionSaveCmd() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.jobBus.Start(jobKindSave, saveNotesJob(m.config.KnowledgeBasePath, notesToSave)))
 }
 
-func (m *model) actionToggleHelpCmd() tea.Cmd {
-	m.helpVisible = !m.helpVisible
-	if m.helpVisible {
-		m.infoMessage = "Navigation cheatsheet open. Press ? to hide."
-	} else {
-		m.infoMessage = "Navigation cheatsheet hidden."
-	}
-	m.markViewportDirty()
-	return nil
-}
-
 func (m *model) actionLoadNewCmd() tea.Cmd {
 	m.stage = stageInput
 	m.paper = nil
@@ -1769,55 +1810,6 @@ func (m *model) actionLoadNewCmd() tea.Cmd {
 	return nil
 }
 
-func (m *model) availableCommands() []uiCommand {
-	base := paletteCommands
-	result := make([]uiCommand, 0, len(base))
-	for _, cmd := range base {
-		if m.commandAvailable(cmd.id) {
-			result = append(result, cmd)
-		}
-	}
-	return result
-}
-
-func (m *model) commandAvailable(id actionID) bool {
-	switch id {
-	case actionSummarize:
-		return m.paper != nil && m.config.LLM != nil
-	case actionAskQuestion:
-		return m.paper != nil && m.config.LLM != nil
-	case actionManualNote:
-		return m.paper != nil
-	case actionSaveNotes:
-		return len(m.collectSelectedNotes()) > 0
-	case actionToggleHelp:
-		return true
-	case actionLoadNew:
-		return true
-	default:
-		return false
-	}
-}
-
-func (m *model) runCommand(id actionID) tea.Cmd {
-	switch id {
-	case actionSummarize:
-		return m.actionSummarizeCmd()
-	case actionAskQuestion:
-		return m.actionAskQuestionCmd()
-	case actionManualNote:
-		return m.actionManualNoteCmd()
-	case actionSaveNotes:
-		return m.actionSaveCmd()
-	case actionToggleHelp:
-		return m.actionToggleHelpCmd()
-	case actionLoadNew:
-		return m.actionLoadNewCmd()
-	default:
-		return nil
-	}
-}
-
 func (m *model) appendTranscript(kind, content string) {
 	m.appendTranscriptEntry(kind, content)
 }
@@ -1832,59 +1824,6 @@ func (m *model) appendTranscriptEntry(kind, content string) int {
 	m.markTranscriptDirty()
 	m.markViewportDirty()
 	return len(m.transcriptEntries) - 1
-}
-
-func (m *model) openCommandPalette() {
-	m.paletteReturnStage = m.stage
-	m.stage = stagePalette
-	m.paletteInput.SetValue("")
-	m.paletteInput.Focus()
-	m.paletteCursor = 0
-	m.refreshPaletteMatches()
-}
-
-func (m *model) closeCommandPalette() {
-	target := m.paletteReturnStage
-	if target == stagePalette || target == 0 {
-		target = stageDisplay
-	}
-	m.stage = target
-	m.paletteInput.Blur()
-	m.paletteInput.SetValue("")
-	m.paletteMatches = nil
-	m.paletteCursor = 0
-	if target != stagePalette {
-		m.composer.Focus()
-	}
-}
-
-func (m *model) refreshPaletteMatches() {
-	filter := strings.ToLower(strings.TrimSpace(m.paletteInput.Value()))
-	commands := m.availableCommands()
-	if filter == "" {
-		m.paletteMatches = commands
-		if m.paletteCursor >= len(m.paletteMatches) {
-			m.paletteCursor = len(m.paletteMatches) - 1
-		}
-		if m.paletteCursor < 0 {
-			m.paletteCursor = 0
-		}
-		return
-	}
-	var matches []uiCommand
-	for _, cmd := range commands {
-		title := strings.ToLower(cmd.title)
-		desc := strings.ToLower(cmd.description)
-		if strings.Contains(title, filter) || strings.Contains(desc, filter) {
-			matches = append(matches, cmd)
-		}
-	}
-	m.paletteMatches = matches
-	if len(m.paletteMatches) == 0 {
-		m.paletteCursor = 0
-	} else if m.paletteCursor >= len(m.paletteMatches) {
-		m.paletteCursor = len(m.paletteMatches) - 1
-	}
 }
 
 func (m *model) ensureConversationSnapshotCmd() tea.Cmd {
@@ -1905,6 +1844,7 @@ func (m *model) appendConversationSnapshotCmd(update notes.SnapshotUpdate) tea.C
 }
 
 func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
+	m.fetchInProgress = false
 	if msg.err != nil {
 		m.stage = stageInput
 		m.errorMessage = msg.err.Error()
@@ -1935,8 +1875,9 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.clearSelection()
 	m.pendingFocusAnchor = anchorSummary
 	m.errorMessage = ""
-	m.infoMessage = fmt.Sprintf("Loaded %s. Generating reading brief…", m.paper.Title)
+	m.infoMessage = fmt.Sprintf("Loaded %s.", m.paper.Title)
 	m.hydrateConversationHistory()
+	hasSnapshotBriefs := m.hasSnapshotBriefs()
 	m.refreshPersistedState()
 	m.markViewportDirty()
 	m.composer.SetValue("")
@@ -1944,6 +1885,11 @@ func (m *model) handlePaperResult(msg paperResultMsg) tea.Cmd {
 	m.appendTranscript("paper", fmt.Sprintf("Loaded %s", m.paper.Title))
 	m.seedBriefMessages()
 	snapshotCmd := m.ensureConversationSnapshotCmd()
+
+	if hasSnapshotBriefs {
+		m.infoMessage = fmt.Sprintf("Loaded %s. Reading brief restored from conversation history.", m.paper.Title)
+		return snapshotCmd
+	}
 
 	if m.config.LLM == nil {
 		m.infoMessage = fmt.Sprintf("Loaded %s. Configure an LLM provider to see the reading brief.", m.paper.Title)
@@ -2014,7 +1960,8 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 		} else {
 			m.clearBriefInfoMessage()
 		}
-		m.setBriefMessage(msg.kind, briefMessageContent(msg.kind, msg.bullets))
+		content := briefMessageContent(msg.kind, msg.bullets)
+		m.setBriefMessage(msg.kind, content)
 		update := notes.SnapshotUpdate{
 			SectionMetadata: []notes.BriefSectionMetadata{
 				{Kind: string(msg.kind), Status: "completed"},
@@ -2029,6 +1976,15 @@ func (m *model) handleBriefSectionResult(msg briefSectionMsg) tea.Cmd {
 				update.Brief = &notes.BriefSnapshot{Technical: bullets}
 			case llm.BriefDeepDive:
 				update.Brief = &notes.BriefSnapshot{DeepDive: bullets}
+			}
+		}
+		if trimmed := strings.TrimSpace(content); trimmed != "" {
+			update.Messages = []notes.ConversationMessage{
+				{
+					Kind:      transcriptKindForBriefSection(msg.kind),
+					Content:   content,
+					Timestamp: time.Now(),
+				},
 			}
 		}
 		snapshotCmd = m.appendConversationSnapshotCmd(update)
@@ -2199,11 +2155,7 @@ var (
 	heroBoxStyle                   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(heroAccentColor).Foreground(heroTextColor).Background(heroEmberColor).Padding(1, 2)
 	heroSummaryStyle               = lipgloss.NewStyle().PaddingLeft(2)
 	taglineStyle                   = lipgloss.NewStyle().Foreground(heroSecondaryTextColor).Italic(true)
-	statusBarStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6")).Padding(0, 1)
-	keyStyle                       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#ffd166")).Padding(0, 1)
-	keyDescStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0def4"))
-	legendBoxStyle                 = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#56526e")).Padding(1, 2)
-	helpBoxStyle                   = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("#7f5af0")).Padding(1, 2)
+	statusBarStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("#dcdcdc")).Padding(0, 1)
 	currentLineStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("#0f0f0f")).Background(lipgloss.Color("#8ecae6"))
 	persistedSuggestionStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#a3be8c")).Italic(true)
 	logoFaceStyle                  = lipgloss.NewStyle().Bold(true).Foreground(heroTextColor).Background(heroEmberColor)

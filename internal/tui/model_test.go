@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,51 @@ func TestComposerEscCancelsQuestionMode(t *testing.T) {
 	}
 }
 
+func TestSubmitComposerSkipsDuplicateFetch(t *testing.T) {
+	m := newTestModel(t)
+	m.composer.SetValue("https://arxiv.org/abs/2504.12345")
+	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+
+	first := m.submitComposer()
+	if first == nil {
+		t.Fatal("expected a command the first time the URL is submitted")
+	}
+	if !m.fetchInProgress {
+		t.Fatal("expected fetchInProgress to be true after starting a fetch")
+	}
+
+	m.infoMessage = ""
+	m.composer.SetValue("https://arxiv.org/abs/2504.12345")
+	if second := m.submitComposer(); second != nil {
+		t.Fatalf("expected nil when submitting a URL while a fetch is in flight, got %T", second)
+	}
+	if got, want := m.infoMessage, fetchInProgressMessage; got != want {
+		t.Fatalf("expected info message %q, got %q", want, got)
+	}
+
+	m.handlePaperResult(paperResultMsg{paper: &arxiv.Paper{ID: "2504.12345", Title: "Fixture"}})
+	if m.fetchInProgress {
+		t.Fatal("expected fetchInProgress to clear after handling the result")
+	}
+
+	m.composer.SetValue("https://arxiv.org/abs/2504.12345")
+	m.setComposerMode(composerModeURL, composerURLPlaceholder, true)
+	if third := m.submitComposer(); third == nil {
+		t.Fatal("expected command after fetch cleared")
+	}
+}
+
+func TestHandlePaperResultClearsFetchInProgress(t *testing.T) {
+	m := newTestModel(t)
+	m.fetchInProgress = true
+	msg := paperResultMsg{paper: &arxiv.Paper{ID: "2104.00001", Title: "Test"}}
+
+	m.handlePaperResult(msg)
+	if m.fetchInProgress {
+		t.Fatal("expected fetchInProgress to be false after handling the result")
+	}
+}
+
 func TestComposerAltEnterSubmitsURL(t *testing.T) {
 	m := newTestModel(t)
 	m.composer.SetValue("https://arxiv.org/abs/1234.5678")
@@ -101,6 +147,18 @@ func TestComposerAltEnterSubmitsURL(t *testing.T) {
 	}
 	if got := strings.TrimSpace(m.composer.Value()); got != "" {
 		t.Fatalf("composer should clear after submission, got %q", got)
+	}
+}
+
+func TestTypingMarksViewportDirty(t *testing.T) {
+	m := newTestModel(t)
+	m.viewportDirty = false
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	if _, handled := m.processComposerKey(msg); !handled {
+		t.Fatal("expected composer key to be handled")
+	}
+	if !m.viewportDirty {
+		t.Fatal("expected viewport dirty flag to be set after typing")
 	}
 }
 
@@ -290,6 +348,33 @@ func TestMouseScrollIgnoredOutsideDisplayInput(t *testing.T) {
 	}
 	if next.viewport.YOffset != 0 {
 		t.Fatal("mouse scroll should be ignored outside input/display stages")
+	}
+}
+
+func TestMouseScrollInDisplayStageUpdatesViewport(t *testing.T) {
+	m := newTestModel(t)
+	m.stage = stageDisplay
+	m.paper = &arxiv.Paper{ID: "1234", Title: "Fixture"}
+	for i := 0; i < 20; i++ {
+		m.transcriptEntries = append(m.transcriptEntries, transcriptEntry{
+			Kind:    briefTranscriptKindSummary,
+			Content: strings.Repeat("line\n", 4),
+		})
+	}
+	m.markViewportDirty()
+	m.refreshViewportIfDirty()
+	if m.viewport.Height == 0 {
+		t.Fatal("expected viewport height to be set")
+	}
+
+	before := m.viewport.YOffset
+	updated, _ := m.Update(tea.MouseMsg{Type: tea.MouseWheelDown})
+	next, ok := updated.(*model)
+	if !ok {
+		t.Fatalf("expected *model, got %T", updated)
+	}
+	if next.viewport.YOffset <= before {
+		t.Fatalf("expected viewport to scroll, got YOffset %d", next.viewport.YOffset)
 	}
 }
 
@@ -609,6 +694,24 @@ func TestBriefSectionResultSetsError(t *testing.T) {
 	}
 }
 
+func TestBriefSectionResultSchedulesScoutMessage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zettel.json")
+
+	m := newTestModel(t)
+	m.config.KnowledgeBasePath = path
+	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
+
+	msg := briefSectionMsg{
+		paperID: m.paper.ID,
+		kind:    llm.BriefSummary,
+		bullets: []string{"Bullet"},
+	}
+	if cmd := m.handleBriefSectionResult(msg); cmd == nil {
+		t.Fatal("expected conversation snapshot update when knowledge base path is configured")
+	}
+}
+
 func TestBriefSectionStreamUpdatesState(t *testing.T) {
 	m := newTestModel(t)
 	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
@@ -696,9 +799,6 @@ func TestSeedBriefMessagesUsesFallbacks(t *testing.T) {
 		t.Fatal("expected summary brief message to be indexed")
 	}
 	content := m.transcriptEntries[summaryIdx].Content
-	if !strings.Contains(content, "### Summary") {
-		t.Fatalf("expected summary heading, got %q", content)
-	}
 	if !strings.Contains(content, fallbackNotice(llm.BriefSummary)) {
 		t.Fatalf("expected fallback notice, got %q", content)
 	}
@@ -820,6 +920,16 @@ func TestBriefMessageContentLimitsSummaryBullets(t *testing.T) {
 	}
 }
 
+func TestBriefMessageContentSkipsHeadingDuplicate(t *testing.T) {
+	content := briefMessageContent(llm.BriefTechnical, []string{"Technical", "- Architecture detail"})
+	if strings.Contains(content, fmt.Sprintf("### %s", briefSectionTitle(llm.BriefTechnical))) {
+		t.Fatalf("expected no heading in content, got %q", content)
+	}
+	if !strings.Contains(content, "- Architecture detail") {
+		t.Fatalf("expected bullet to remain, got %q", content)
+	}
+}
+
 func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m := newTestModel(t)
 	m.config.LLM = fakeLLM{}
@@ -837,29 +947,7 @@ func TestDisplayContentOmitsStaticBriefSections(t *testing.T) {
 	m.briefSections[llm.BriefSummary] = briefSectionState{Loading: true}
 
 	view := m.buildDisplayContent()
-	if strings.Contains(view.content, "Summary Pass") || strings.Contains(view.content, "Technical Details") || strings.Contains(view.content, "Deep Dive References") {
-		t.Fatalf("static brief sections should be omitted in view:\n%s", view.content)
-	}
-}
-
-func TestNavigationCheatsheetToggle(t *testing.T) {
-	m := newTestModel(t)
-	m.paper = &arxiv.Paper{ID: "1234.56789", Title: "Fixture"}
-
-	view := m.renderStackedDisplay()
-	if strings.Contains(view, "Navigation Cheatsheet") {
-		t.Fatal("navigation cheatsheet should be hidden by default")
-	}
-
-	m.actionToggleHelpCmd()
-	view = m.renderStackedDisplay()
-	if !strings.Contains(view, "Navigation Cheatsheet") {
-		t.Fatal("navigation cheatsheet did not appear after toggling help")
-	}
-
-	m.actionToggleHelpCmd()
-	view = m.renderStackedDisplay()
-	if strings.Contains(view, "Navigation Cheatsheet") {
-		t.Fatal("navigation cheatsheet should hide again after second toggle")
+	if strings.Contains(view.body, "Summary Pass") || strings.Contains(view.body, "Technical Details") || strings.Contains(view.body, "Deep Dive References") {
+		t.Fatalf("static brief sections should be omitted in view:\n%s", view.body)
 	}
 }

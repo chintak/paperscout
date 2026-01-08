@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 )
 
@@ -17,8 +18,8 @@ func TestPageLayoutUpdate(t *testing.T) {
 		transcriptHeight int
 		composerHeight   int
 	}{
-		{name: "narrow", width: 80, height: 24, viewportWidth: 76, viewportHeight: 14, transcriptHeight: 6, composerHeight: 1},
-		{name: "wide", width: 200, height: 40, viewportWidth: 196, viewportHeight: 30, transcriptHeight: 10, composerHeight: 1},
+		{name: "narrow", width: 80, height: 24, viewportWidth: 76, viewportHeight: 15, transcriptHeight: 6, composerHeight: 1},
+		{name: "wide", width: 200, height: 40, viewportWidth: 196, viewportHeight: 31, transcriptHeight: 10, composerHeight: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -101,12 +102,13 @@ func TestFormatConversationEntryTableAlignment(t *testing.T) {
 func TestBuildDisplayContentStripsMarkdown(t *testing.T) {
 	m := &model{
 		viewport: viewport.New(80, 20),
+		composer: textarea.New(),
 		transcriptEntries: []transcriptEntry{
 			{Kind: "brief", Content: "### **Title**\n| **Col** | **Val** |"},
 		},
 	}
 	view := m.buildDisplayContent()
-	content := stripANSI(view.content)
+	content := stripANSI(view.body)
 	if strings.Contains(content, "###") || strings.Contains(content, "**") {
 		t.Fatalf("markdown markers should be stripped:\n%s", content)
 	}

@@ -17,8 +17,6 @@ func (m *model) View() string {
 		view = m.viewDisplay()
 	case stageSaving:
 		view = m.viewDisplay()
-	case stagePalette:
-		view = m.viewPalette()
 	default:
 		view = ""
 	}
@@ -27,8 +25,7 @@ func (m *model) View() string {
 
 func (m *model) viewInput() string {
 	m.refreshViewportIfDirty()
-	body := m.renderStackedDisplay()
-	return joinNonEmptyTight([]string{body, m.composerPanel(), m.footerView()})
+	return m.renderStackedDisplay()
 }
 
 func (m *model) viewDisplay() string {
@@ -38,11 +35,15 @@ func (m *model) viewDisplay() string {
 	m.refreshTranscriptIfDirty()
 	m.refreshViewportIfDirty()
 	body := m.renderStackedDisplay()
-	return joinNonEmptyTight([]string{body, m.composerPanel(), m.footerView()})
+	return body
 }
 
 func (m *model) renderStackedDisplay() string {
-	parts := []string{m.viewport.View()}
+	parts := []string{}
+	if hero := strings.TrimSpace(m.heroView()); hero != "" {
+		parts = append(parts, hero)
+	}
+	parts = append(parts, m.viewport.View())
 	if m.errorMessage != "" {
 		parts = append(parts, errorStyle.Render(m.errorMessage))
 	}
@@ -53,21 +54,7 @@ func (m *model) renderStackedDisplay() string {
 		}
 		parts = append(parts, helperStyle.Render(message))
 	}
-	if m.helpVisible {
-		if legend := m.keyLegendView(); legend != "" {
-			parts = append(parts, legend)
-		}
-		parts = append(parts, m.helpView())
-	}
 	return joinNonEmpty(parts)
-}
-
-func (m *model) composerPanel() string {
-	return m.composer.View()
-}
-
-func (m *model) footerView() string {
-	return m.footerTickerView()
 }
 
 func (m *model) composerHelpText() string {
@@ -76,13 +63,16 @@ func (m *model) composerHelpText() string {
 
 func (m *model) footerTickerView() string {
 	hints := m.composerHelpText()
-	width := m.layout.windowWidth
+	width := m.viewport.Width
+	if width <= 0 {
+		width = m.layout.viewportWidth
+	}
 	if width <= 0 {
 		width = 80
 	}
 	available := width - 2
 	if available <= 0 {
-		return statusBarStyle.Render(previewText(hints, width))
+		available = width
 	}
 	line := previewText(hints, available)
 	if event := m.lastTranscriptEvent(); event != "" {
@@ -90,7 +80,7 @@ func (m *model) footerTickerView() string {
 		label := "Last: " + event
 		line = previewText(hints+separator+label, available)
 	}
-	return statusBarStyle.Render(line)
+	return statusBarStyle.Copy().Width(width).Render(line)
 }
 
 func (m *model) lastTranscriptEvent() string {
@@ -115,8 +105,8 @@ func describeTranscriptEntry(entry transcriptEntry) string {
 		return "Draft answer ready"
 	case "answer":
 		return "Answer ready"
-	case "brief":
-		return briefEventLabel(entry.Content)
+	case "brief", briefTranscriptKindSummary, briefTranscriptKindTechnical, briefTranscriptKindDeepDive:
+		return briefEventLabel(entry)
 	case "save":
 		return "Notes saved"
 	case "error":
@@ -126,8 +116,11 @@ func describeTranscriptEntry(entry transcriptEntry) string {
 	}
 }
 
-func briefEventLabel(content string) string {
-	section := briefSectionFromContent(content)
+func briefEventLabel(entry transcriptEntry) string {
+	if label, ok := briefSectionLabelFromEntry(entry); ok {
+		return fmt.Sprintf("Brief %s ready", strings.ToLower(label))
+	}
+	section := briefSectionFromContent(entry.Content)
 	if section == "" {
 		return "Brief ready"
 	}
@@ -162,41 +155,6 @@ func errorEventLabel(content string) string {
 		return "Error occurred"
 	}
 	return fmt.Sprintf("Error: %s", previewText(trimmed, 32))
-}
-
-func (m *model) viewPalette() string {
-	var b strings.Builder
-	b.WriteString(sectionHeaderStyle.Render("Command Palette"))
-	b.WriteRune('\n')
-	b.WriteString(m.paletteInput.View())
-	b.WriteRune('\n')
-	b.WriteString(helperStyle.Render("Enter to run, Esc to cancel."))
-	b.WriteRune('\n')
-	b.WriteRune('\n')
-	if len(m.paletteMatches) == 0 {
-		b.WriteString(helperStyle.Render("No commands match this filter."))
-	} else {
-		for idx, cmd := range m.paletteMatches {
-			label := fmt.Sprintf("  %s", cmd.title)
-			if cmd.shortcut != "" {
-				label = fmt.Sprintf("  %s  [%s]", cmd.title, cmd.shortcut)
-			}
-			desc := helperStyle.Render("   " + cmd.description)
-			if idx == m.paletteCursor {
-				if cmd.shortcut != "" {
-					label = currentLineStyle.Render("▸ " + cmd.title + "  [" + cmd.shortcut + "]")
-				} else {
-					label = currentLineStyle.Render("▸ " + cmd.title)
-				}
-				desc = helperStyle.Render("   " + cmd.description)
-			}
-			b.WriteString(label)
-			b.WriteRune('\n')
-			b.WriteString(desc)
-			b.WriteRune('\n')
-		}
-	}
-	return joinNonEmpty([]string{m.frameWithHero(b.String()), m.composerPanel(), m.footerView()})
 }
 
 func (m *model) heroView() string {
@@ -247,48 +205,6 @@ func joinNonEmptyTight(parts []string) string {
 		filtered = append(filtered, part)
 	}
 	return strings.Join(filtered, "\n")
-}
-
-type keyHint struct {
-	Key         string
-	Description string
-}
-
-func (m *model) keyLegendView() string {
-	hints := []keyHint{
-		{"↑/↓", "Scroll"},
-		{"g/G", "Top or bottom"},
-		{"r", "Load new URL"},
-		{"?", "Toggle cheatsheet"},
-		{"Ctrl+K", "Command palette"},
-	}
-	rows := []string{sectionHeaderStyle.Render("Navigation Cheatsheet")}
-	const columns = 3
-	for i := 0; i < len(hints); i += columns {
-		end := i + columns
-		if end > len(hints) {
-			end = len(hints)
-		}
-		var cells []string
-		for _, hint := range hints[i:end] {
-			key := keyStyle.Render(hint.Key)
-			desc := keyDescStyle.Render(" " + hint.Description)
-			cells = append(cells, lipgloss.JoinHorizontal(lipgloss.Top, key, desc))
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cells...))
-	}
-	return legendBoxStyle.Render(strings.Join(rows, "\n"))
-}
-
-func (m *model) helpView() string {
-	lines := []string{
-		sectionHeaderStyle.Render("Command Palette"),
-		helperStyle.Render("• use g / G to jump to the top or bottom."),
-		helperStyle.Render("• press Ctrl+K to open the command palette, then type to filter actions and hit Enter to run them."),
-		helperStyle.Render("• use the palette to regenerate the LLM brief or ask questions once Ollama is configured."),
-		helperStyle.Render("• press r to paste a new URL, Ctrl+C to quit."),
-	}
-	return helpBoxStyle.Render(strings.Join(lines, "\n"))
 }
 
 func renderLogo() string {

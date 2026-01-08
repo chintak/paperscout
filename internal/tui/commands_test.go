@@ -41,27 +41,70 @@ func newTestModel(t *testing.T) *model {
 	return teaModel
 }
 
-func TestCommandAvailability(t *testing.T) {
+func TestActionManualNoteRequiresPaper(t *testing.T) {
 	m := newTestModel(t)
-	if m.commandAvailable(actionManualNote) {
-		t.Fatal("manual note should be disabled without a paper")
+	if cmd := m.actionManualNoteCmd(); cmd != nil {
+		t.Fatalf("expected nil command, got %T", cmd)
+	}
+	if want, got := "Load a paper before drafting notes.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 
 	m.paper = &arxiv.Paper{ID: "1234", Title: "Test"}
-	if !m.commandAvailable(actionManualNote) {
-		t.Fatal("manual note should be enabled when a paper is loaded")
+	m.infoMessage = ""
+	if cmd := m.actionManualNoteCmd(); cmd != nil {
+		t.Fatalf("expected nil command, got %T", cmd)
 	}
-	if m.commandAvailable(actionSummarize) {
-		t.Fatal("summarize requires LLM client")
+	if want, got := "Composer active. Press Ctrl+Enter to store the note.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestActionSummarizeRequiresSetup(t *testing.T) {
+	m := newTestModel(t)
+	if cmd := m.actionSummarizeCmd(); cmd != nil {
+		t.Fatalf("expected nil command, got %T", cmd)
+	}
+	if want, got := "Load a paper before summarizing.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+
+	m.paper = &arxiv.Paper{ID: "1234", Title: "Test", FullText: "content"}
+	m.infoMessage = ""
+	if cmd := m.actionSummarizeCmd(); cmd != nil {
+		t.Fatalf("expected nil command when LLM missing, got %T", cmd)
+	}
+	if want, got := "Configure Ollama via flags to enable summaries.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 
 	m.config.LLM = fakeLLM{}
-	if !m.commandAvailable(actionSummarize) {
-		t.Fatal("summarize should be enabled with LLM + paper")
+	m.paper.FullText = ""
+	m.infoMessage = ""
+	if cmd := m.actionSummarizeCmd(); cmd != nil {
+		t.Fatalf("expected nil command when full text missing, got %T", cmd)
+	}
+	if want, got := "PDF text missing; cannot build the reading brief.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestActionAskQuestionRequiresSetup(t *testing.T) {
+	m := newTestModel(t)
+	if cmd := m.actionAskQuestionCmd(); cmd != nil {
+		t.Fatalf("expected nil command, got %T", cmd)
+	}
+	if want, got := "Load a paper before asking questions.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 
-	if m.commandAvailable(actionSaveNotes) {
-		t.Fatal("save should require selected notes")
+	m.paper = &arxiv.Paper{ID: "1234", Title: "Test"}
+	m.infoMessage = ""
+	if cmd := m.actionAskQuestionCmd(); cmd != nil {
+		t.Fatalf("expected nil command when LLM missing, got %T", cmd)
+	}
+	if want, got := "Configure Ollama to unlock questions.", m.infoMessage; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
 
